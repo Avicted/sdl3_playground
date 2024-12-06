@@ -19,6 +19,21 @@ Ball ball = {
     .size = {32, 32},
 };
 
+bool isRunning = true;
+
+static void
+Input(void)
+{
+    SDL_Event event;
+    while (SDL_PollEvent(&event))
+    {
+        if (event.type == SDL_EVENT_QUIT)
+        {
+            isRunning = false;
+        }
+    }
+}
+
 static void
 Update(float deltaTime)
 {
@@ -97,25 +112,11 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    bool isRunning = true;
-
     while (isRunning)
     {
-        SDL_Event event;
-        while (SDL_PollEvent(&event))
-        {
-            if (event.type == SDL_EVENT_QUIT)
-            {
-                isRunning = false;
-                break;
-            }
-        }
-        if (!isRunning)
-        {
-            break;
-        }
-
         const float deltaTime = 1.0f / 60.0f;
+
+        Input();
         Update(deltaTime);
         Render(renderer);
     }
