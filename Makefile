@@ -15,6 +15,7 @@ all: SDL $(EXE)
 
 # Build the main executable
 $(EXE): $(SRC)
+	cp -r shaders build/
 	$(shell mkdir -p build)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $(EXE) $(SRC) $(LIBS)
 

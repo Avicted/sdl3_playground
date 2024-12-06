@@ -2,6 +2,10 @@
 
 #include <glad/gl.h>
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+
 typedef struct Vec2
 {
     float x;
@@ -17,7 +21,7 @@ typedef struct Ball // @Note: Actually a rectangle
 
 Ball ball = {
     .position = {320, 180},
-    .velocity = {0.6 * 3, 0.4 * 3},
+    .velocity = {128, 64},
     .size = {32, 32},
 };
 
@@ -28,47 +32,164 @@ SDL_Window *window = NULL;
 const int windowWidth = 640;
 const int windowHeight = 360;
 SDL_GLContext glContext = NULL;
-static GLuint shaderProgram;
 
-static void
-SetupShaders(void)
+GLuint fbo, fboTexture;
+GLuint fboVAO, fboVBO;
+GLuint ballVAO, ballVBO;
+
+// Shaders
+GLuint sceneShaderProgram;
+GLuint fboShaderProgram;
+
+// -------------------------------------------------------------------------------
+
+static char *
+ReadShaderSource(const char *filePath)
 {
-    const char *vertexShaderSource =
-        "#version 330 core\n"
-        "layout (location = 0) in vec2 aPos;\n"
-        "uniform vec2 uResolution;\n"
-        "uniform vec2 uTranslation;\n"
-        "void main()\n"
-        "{\n"
-        "    vec2 zeroToOne = (aPos + uTranslation) / uResolution;\n"
-        "    vec2 zeroToTwo = zeroToOne * 2.0;\n"
-        "    vec2 clipSpace = zeroToTwo - 1.0;\n"
-        "    gl_Position = vec4(clipSpace * vec2(1.0, -1.0), 0.0, 1.0);\n"
-        "}\n";
+    FILE *file = fopen(filePath, "r");
+    if (!file)
+    {
+        fprintf(stderr, "Failed to open shader file: %s\n", filePath);
+        return NULL;
+    }
 
-    const char *fragmentShaderSource =
-        "#version 330 core\n"
-        "out vec4 FragColor;\n"
-        "void main()\n"
-        "{\n"
-        "    FragColor = vec4(0.9, 0.2, 0.3, 1.0);\n"
-        "}\n";
+    fseek(file, 0, SEEK_END);
+    long length = ftell(file);
+    rewind(file);
 
-    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
-    glCompileShader(vertexShader);
+    char *source = (char *)malloc(length + 1);
+    if (!source)
+    {
+        fprintf(stderr, "Failed to allocate memory for shader source\n");
+        fclose(file);
+        return NULL;
+    }
 
-    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
-    glCompileShader(fragmentShader);
+    fread(source, 1, length, file);
+    source[length] = '\0';
+    fclose(file);
 
-    shaderProgram = glCreateProgram();
-    glAttachShader(shaderProgram, vertexShader);
-    glAttachShader(shaderProgram, fragmentShader);
-    glLinkProgram(shaderProgram);
+    return source;
+}
 
+static GLuint
+CompileShader(const char *source, GLenum shaderType)
+{
+    GLuint shader = glCreateShader(shaderType);
+    glShaderSource(shader, 1, &source, NULL);
+    glCompileShader(shader);
+
+    // Check for compilation errors
+    GLint success;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+    if (!success)
+    {
+        char infoLog[512];
+        glGetShaderInfoLog(shader, sizeof(infoLog), NULL, infoLog);
+        fprintf(stderr, "Shader compilation failed:\n%s\n", infoLog);
+    }
+
+    return shader;
+}
+
+static GLuint
+LinkProgram(GLuint vertexShader, GLuint fragmentShader)
+{
+    GLuint program = glCreateProgram();
+    glAttachShader(program, vertexShader);
+    glAttachShader(program, fragmentShader);
+    glLinkProgram(program);
+
+    // Check for linking errors
+    GLint success;
+    glGetProgramiv(program, GL_LINK_STATUS, &success);
+    if (!success)
+    {
+        char infoLog[512];
+        glGetProgramInfoLog(program, sizeof(infoLog), NULL, infoLog);
+        fprintf(stderr, "Program linking failed:\n%s\n", infoLog);
+    }
+
+    return program;
+}
+
+static GLuint
+LoadSceneShader()
+{
+    const char *vertexSource = ReadShaderSource("./shaders/scene_vertex_shader.glsl");
+    const char *fragmentSource = ReadShaderSource("./shaders/scene_fragment_shader.glsl");
+
+    if (!vertexSource || !fragmentSource)
+    {
+        fprintf(stderr, "Failed to load scene shaders\n");
+        return 0;
+    }
+
+    // Setup ball VAO and VBO
+    float ballVertices[] = {
+        // positions       // texture coords
+        0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
+        1.0f, 0.0f, 0.0f, 1.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+
+        0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
+        1.0f, 1.0f, 0.0f, 1.0f, 1.0f,
+        1.0f, 0.0f, 0.0f, 1.0f, 0.0f};
+
+    glGenVertexArrays(1, &ballVAO);
+    glGenBuffers(1, &ballVBO);
+
+    glBindVertexArray(ballVAO);
+
+    glBindBuffer(GL_ARRAY_BUFFER, ballVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(ballVertices), ballVertices, GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)0);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
+    GLuint vertexShader = CompileShader(vertexSource, GL_VERTEX_SHADER);
+    GLuint fragmentShader = CompileShader(fragmentSource, GL_FRAGMENT_SHADER);
+
+    GLuint program = LinkProgram(vertexShader, fragmentShader);
+
+    // Cleanup
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
+    free((void *)vertexSource);
+    free((void *)fragmentSource);
+
+    return program;
+}
+
+static GLuint
+LoadFboShader()
+{
+    const char *vertexSource = ReadShaderSource("./shaders/fbo_vertex_shader.glsl");
+    const char *fragmentSource = ReadShaderSource("./shaders/fbo_fragment_shader.glsl");
+
+    if (!vertexSource || !fragmentSource)
+    {
+        fprintf(stderr, "Failed to load FBO shaders\n");
+        return 0;
+    }
+
+    GLuint vertexShader = CompileShader(vertexSource, GL_VERTEX_SHADER);
+    GLuint fragmentShader = CompileShader(fragmentSource, GL_FRAGMENT_SHADER);
+
+    GLuint program = LinkProgram(vertexShader, fragmentShader);
+
+    // Cleanup
+    glDeleteShader(vertexShader);
+    glDeleteShader(fragmentShader);
+    free((void *)vertexSource);
+    free((void *)fragmentSource);
+
+    return program;
 }
 
 static int
@@ -123,7 +244,29 @@ Init(void)
     //     return 1;
     // }
 
-    SetupShaders();
+    glViewport(0, 0, windowWidth, windowHeight);
+
+    // Create FBO
+    glGenFramebuffers(1, &fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
+    // Create texture for the FBO
+    glGenTextures(1, &fboTexture);
+    glBindTexture(GL_TEXTURE_2D, fboTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, windowWidth, windowHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fboTexture, 0);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+    {
+        SDL_Log("Framebuffer is not complete!");
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    sceneShaderProgram = LoadSceneShader();
+    fboShaderProgram = LoadFboShader();
 
     return 0;
 }
@@ -137,6 +280,30 @@ Input(void)
         if (event.type == SDL_EVENT_QUIT)
         {
             isRunning = false;
+        }
+
+        if (event.type == SDL_EVENT_WINDOW_RESIZED)
+        {
+            int newWidth, newHeight;
+            SDL_GetWindowSizeInPixels(window, &newWidth, &newHeight);
+
+            float aspectRatio = (float)windowWidth / (float)windowHeight;
+            float newAspectRatio = (float)newWidth / (float)newHeight;
+
+            if (newAspectRatio > aspectRatio)
+            {
+                // Wider: Add black bars on the sides
+                int viewportWidth = (int)(newHeight * aspectRatio);
+                int xOffset = (newWidth - viewportWidth) / 2;
+                glViewport(xOffset, 0, viewportWidth, newHeight);
+            }
+            else
+            {
+                // Taller: Add black bars on the top and bottom
+                int viewportHeight = (int)(newWidth / aspectRatio);
+                int yOffset = (newHeight - viewportHeight) / 2;
+                glViewport(0, yOffset, newWidth, viewportHeight);
+            }
         }
     }
 }
@@ -161,9 +328,9 @@ Update(float deltaTime)
     if (ball.position.x - ball.size.x < 0)
     {
         ball.position.x = ball.size.x;
-    }
-    else if (ball.position.x + ball.size.x > windowWidth)
-    {
+        // Draw ball
+        glBindVertexArray(ballVAO);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
         ball.position.x = windowWidth - ball.size.x;
     }
 
@@ -180,50 +347,18 @@ Update(float deltaTime)
 static void
 Render(void)
 {
-    // Clear the screen
-    glClearColor(0.156f, 0.156f, 0.313f, 1.0f);
+    glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    // Set up ball vertices
-    float vertices[] = {
-        -ball.size.x, -ball.size.y, // Bottom-left
-        ball.size.x, -ball.size.y,  // Bottom-right
-        -ball.size.x, ball.size.y,  // Top-left
-        ball.size.x, ball.size.y    // Top-right
-    };
+    glUseProgram(sceneShaderProgram);
 
-    GLuint VBO, VAO;
-    glGenVertexArrays(1, &VAO);
-    glGenBuffers(1, &VBO);
+    glUniform2f(glGetUniformLocation(sceneShaderProgram, "uResolution"), windowWidth, windowHeight);
+    glUniform2f(glGetUniformLocation(sceneShaderProgram, "uPosition"), ball.position.x, ball.position.y);
+    glUniform2f(glGetUniformLocation(sceneShaderProgram, "uSize"), ball.size.x, ball.size.y);
 
-    glBindVertexArray(VAO);
+    glBindVertexArray(ballVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
 
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void *)0);
-    glEnableVertexAttribArray(0);
-
-    // Use the shader program
-    glUseProgram(shaderProgram);
-
-    // Set uniforms
-    GLint resolutionLoc = glGetUniformLocation(shaderProgram, "uResolution");
-    GLint translationLoc = glGetUniformLocation(shaderProgram, "uTranslation");
-
-    glUniform2f(resolutionLoc, (float)windowWidth, (float)windowHeight);
-    glUniform2f(translationLoc, ball.position.x, ball.position.y);
-
-    // Draw the ball
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-
-    // Cleanup
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
-    glDeleteBuffers(1, &VBO);
-    glDeleteVertexArrays(1, &VAO);
-
-    // Swap buffers
     SDL_GL_SwapWindow(window);
 }
 
