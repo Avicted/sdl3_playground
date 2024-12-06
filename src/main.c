@@ -27,8 +27,6 @@ Ball ball = {
 
 bool isRunning = true;
 SDL_Window *window = NULL;
-// SDL_Renderer *renderer = NULL;
-// SDL_Texture *renderTexture = NULL;
 const int windowWidth = 640;
 const int windowHeight = 360;
 SDL_GLContext glContext = NULL;
@@ -214,13 +212,6 @@ Init(void)
         return 1;
     }
 
-    // if (!SDL_CreateWindowAndRenderer("SDL Playground", windowWidth, windowHeight, windowFlags, &window, &renderer))
-    // {
-    //     SDL_Log("SDL_CreateWindowAndRenderer failed (%s)", SDL_GetError());
-    //     SDL_Quit();
-    //     return 1;
-    // }
-
     glContext = SDL_GL_CreateContext(window);
     if (!gladLoaderLoadGL())
     {
@@ -234,15 +225,6 @@ Init(void)
     SDL_Log("Renderer: %s", glGetString(GL_RENDERER));
     SDL_Log("OpenGL Version: %s", glGetString(GL_VERSION));
     SDL_Log("GLSL Version: %s", glGetString(GL_SHADING_LANGUAGE_VERSION));
-
-    // renderTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, windowWidth, windowHeight);
-    // if (!renderTexture)
-    // {
-    //     SDL_Log("SDL_CreateTexture failed (%s)", SDL_GetError());
-    //     SDL_DestroyWindow(window);
-    //     SDL_Quit();
-    //     return 1;
-    // }
 
     glViewport(0, 0, windowWidth, windowHeight);
 
