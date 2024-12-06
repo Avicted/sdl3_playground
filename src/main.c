@@ -1,5 +1,11 @@
 #include <SDL3/SDL.h>
 
+#include <glad/gl.h>
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+
 typedef struct Vec2
 {
     float x;
@@ -15,21 +21,182 @@ typedef struct Ball // @Note: Actually a rectangle
 
 Ball ball = {
     .position = {320, 180},
-    .velocity = {0.6 * 3, 0.4 * 3},
+    .velocity = {128, 64},
     .size = {32, 32},
 };
 
 bool isRunning = true;
 SDL_Window *window = NULL;
-SDL_Renderer *renderer = NULL;
-SDL_Texture *renderTexture = NULL;
 const int windowWidth = 640;
 const int windowHeight = 360;
 SDL_GLContext glContext = NULL;
 
+GLuint fbo, fboTexture;
+GLuint fboVAO, fboVBO;
+GLuint ballVAO, ballVBO;
+
+// Shaders
+GLuint sceneShaderProgram;
+GLuint fboShaderProgram;
+
+// -------------------------------------------------------------------------------
+
+static char *
+ReadShaderSource(const char *filePath)
+{
+    FILE *file = fopen(filePath, "r");
+    if (!file)
+    {
+        fprintf(stderr, "Failed to open shader file: %s\n", filePath);
+        return NULL;
+    }
+
+    fseek(file, 0, SEEK_END);
+    long length = ftell(file);
+    rewind(file);
+
+    char *source = (char *)malloc(length + 1);
+    if (!source)
+    {
+        fprintf(stderr, "Failed to allocate memory for shader source\n");
+        fclose(file);
+        return NULL;
+    }
+
+    fread(source, 1, length, file);
+    source[length] = '\0';
+    fclose(file);
+
+    return source;
+}
+
+static GLuint
+CompileShader(const char *source, GLenum shaderType)
+{
+    GLuint shader = glCreateShader(shaderType);
+    glShaderSource(shader, 1, &source, NULL);
+    glCompileShader(shader);
+
+    // Check for compilation errors
+    GLint success;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+    if (!success)
+    {
+        char infoLog[512];
+        glGetShaderInfoLog(shader, sizeof(infoLog), NULL, infoLog);
+        fprintf(stderr, "Shader compilation failed:\n%s\n", infoLog);
+    }
+
+    return shader;
+}
+
+static GLuint
+LinkProgram(GLuint vertexShader, GLuint fragmentShader)
+{
+    GLuint program = glCreateProgram();
+    glAttachShader(program, vertexShader);
+    glAttachShader(program, fragmentShader);
+    glLinkProgram(program);
+
+    // Check for linking errors
+    GLint success;
+    glGetProgramiv(program, GL_LINK_STATUS, &success);
+    if (!success)
+    {
+        char infoLog[512];
+        glGetProgramInfoLog(program, sizeof(infoLog), NULL, infoLog);
+        fprintf(stderr, "Program linking failed:\n%s\n", infoLog);
+    }
+
+    return program;
+}
+
+static GLuint
+LoadSceneShader()
+{
+    const char *vertexSource = ReadShaderSource("./shaders/scene_vertex_shader.glsl");
+    const char *fragmentSource = ReadShaderSource("./shaders/scene_fragment_shader.glsl");
+
+    if (!vertexSource || !fragmentSource)
+    {
+        fprintf(stderr, "Failed to load scene shaders\n");
+        return 0;
+    }
+
+    // Setup ball VAO and VBO
+    float ballVertices[] = {
+        // positions       // texture coords
+        0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
+        1.0f, 0.0f, 0.0f, 1.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+
+        0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
+        1.0f, 1.0f, 0.0f, 1.0f, 1.0f,
+        1.0f, 0.0f, 0.0f, 1.0f, 0.0f};
+
+    glGenVertexArrays(1, &ballVAO);
+    glGenBuffers(1, &ballVBO);
+
+    glBindVertexArray(ballVAO);
+
+    glBindBuffer(GL_ARRAY_BUFFER, ballVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(ballVertices), ballVertices, GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)0);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
+    GLuint vertexShader = CompileShader(vertexSource, GL_VERTEX_SHADER);
+    GLuint fragmentShader = CompileShader(fragmentSource, GL_FRAGMENT_SHADER);
+
+    GLuint program = LinkProgram(vertexShader, fragmentShader);
+
+    // Cleanup
+    glDeleteShader(vertexShader);
+    glDeleteShader(fragmentShader);
+    free((void *)vertexSource);
+    free((void *)fragmentSource);
+
+    return program;
+}
+
+static GLuint
+LoadFboShader()
+{
+    const char *vertexSource = ReadShaderSource("./shaders/fbo_vertex_shader.glsl");
+    const char *fragmentSource = ReadShaderSource("./shaders/fbo_fragment_shader.glsl");
+
+    if (!vertexSource || !fragmentSource)
+    {
+        fprintf(stderr, "Failed to load FBO shaders\n");
+        return 0;
+    }
+
+    GLuint vertexShader = CompileShader(vertexSource, GL_VERTEX_SHADER);
+    GLuint fragmentShader = CompileShader(fragmentSource, GL_FRAGMENT_SHADER);
+
+    GLuint program = LinkProgram(vertexShader, fragmentShader);
+
+    // Cleanup
+    glDeleteShader(vertexShader);
+    glDeleteShader(fragmentShader);
+    free((void *)vertexSource);
+    free((void *)fragmentSource);
+
+    return program;
+}
+
 static int
 Init(void)
 {
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+
     if (!SDL_Init(SDL_INIT_VIDEO))
     {
         SDL_Log("SDL_Init failed (%s)", SDL_GetError());
@@ -37,16 +204,51 @@ Init(void)
     }
 
     SDL_WindowFlags windowFlags = (SDL_WindowFlags)(SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL);
-    if (!SDL_CreateWindowAndRenderer("SDL Playground", windowWidth, windowHeight, windowFlags, &window, &renderer))
+    window = SDL_CreateWindow("SDL Playground", windowWidth, windowHeight, windowFlags);
+    if (!window)
     {
-        SDL_Log("SDL_CreateWindowAndRenderer failed (%s)", SDL_GetError());
+        SDL_Log("SDL_CreateWindow failed (%s)", SDL_GetError());
         SDL_Quit();
         return 1;
     }
 
-    renderTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, windowWidth, windowHeight);
-
     glContext = SDL_GL_CreateContext(window);
+    if (!gladLoaderLoadGL())
+    {
+        SDL_Log("Failed to initialize OpenGL context");
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize OpenGL context");
+        return 1;
+    }
+
+    // Log OpenGL information
+    SDL_Log("Vendor: %s", glGetString(GL_VENDOR));
+    SDL_Log("Renderer: %s", glGetString(GL_RENDERER));
+    SDL_Log("OpenGL Version: %s", glGetString(GL_VERSION));
+    SDL_Log("GLSL Version: %s", glGetString(GL_SHADING_LANGUAGE_VERSION));
+
+    glViewport(0, 0, windowWidth, windowHeight);
+
+    // Create FBO
+    glGenFramebuffers(1, &fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
+    // Create texture for the FBO
+    glGenTextures(1, &fboTexture);
+    glBindTexture(GL_TEXTURE_2D, fboTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, windowWidth, windowHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fboTexture, 0);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+    {
+        SDL_Log("Framebuffer is not complete!");
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    sceneShaderProgram = LoadSceneShader();
+    fboShaderProgram = LoadFboShader();
 
     return 0;
 }
@@ -61,6 +263,30 @@ Input(void)
         {
             isRunning = false;
         }
+
+        if (event.type == SDL_EVENT_WINDOW_RESIZED)
+        {
+            int newWidth, newHeight;
+            SDL_GetWindowSizeInPixels(window, &newWidth, &newHeight);
+
+            float aspectRatio = (float)windowWidth / (float)windowHeight;
+            float newAspectRatio = (float)newWidth / (float)newHeight;
+
+            if (newAspectRatio > aspectRatio)
+            {
+                // Wider: Add black bars on the sides
+                int viewportWidth = (int)(newHeight * aspectRatio);
+                int xOffset = (newWidth - viewportWidth) / 2;
+                glViewport(xOffset, 0, viewportWidth, newHeight);
+            }
+            else
+            {
+                // Taller: Add black bars on the top and bottom
+                int viewportHeight = (int)(newWidth / aspectRatio);
+                int yOffset = (newHeight - viewportHeight) / 2;
+                glViewport(0, yOffset, newWidth, viewportHeight);
+            }
+        }
     }
 }
 
@@ -71,28 +297,28 @@ Update(float deltaTime)
     ball.position.x += ball.velocity.x * deltaTime;
     ball.position.y += ball.velocity.y * deltaTime;
 
-    if (ball.position.x - ball.size.x < 0 || ball.position.x + ball.size.x > windowWidth)
+    if (ball.position.x < 0 || ball.position.x + ball.size.x > windowWidth)
     {
         ball.velocity.x = -ball.velocity.x;
     }
 
-    if (ball.position.y - ball.size.y < 0 || ball.position.y + ball.size.y > windowHeight)
+    if (ball.position.y < 0 || ball.position.y + ball.size.y > windowHeight)
     {
         ball.velocity.y = -ball.velocity.y;
     }
 
-    if (ball.position.x - ball.size.x < 0)
+    if (ball.position.x < 0)
     {
-        ball.position.x = ball.size.x;
+        ball.position.x = 0;
     }
     else if (ball.position.x + ball.size.x > windowWidth)
     {
         ball.position.x = windowWidth - ball.size.x;
     }
 
-    if (ball.position.y - ball.size.y < 0)
+    if (ball.position.y < 0)
     {
-        ball.position.y = ball.size.y;
+        ball.position.y = 0;
     }
     else if (ball.position.y + ball.size.y > windowHeight)
     {
@@ -101,57 +327,21 @@ Update(float deltaTime)
 }
 
 static void
-Render(SDL_Renderer *renderer)
+Render(void)
 {
-    // Set render target to texture
-    SDL_SetRenderTarget(renderer, renderTexture);
+    glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
 
-    // Render background
-    SDL_SetRenderDrawColor(renderer, 40, 40, 80, SDL_ALPHA_OPAQUE);
-    SDL_RenderClear(renderer);
+    glUseProgram(sceneShaderProgram);
 
-    // Render ball
-    SDL_SetRenderDrawColor(renderer, 255, 255, 255, SDL_ALPHA_OPAQUE);
-    SDL_FRect rect = {
-        .x = ball.position.x - ball.size.x,
-        .y = ball.position.y - ball.size.y,
-        .w = ball.size.x * 2,
-        .h = ball.size.y * 2,
-    };
+    glUniform2f(glGetUniformLocation(sceneShaderProgram, "uResolution"), windowWidth, windowHeight);
+    glUniform2f(glGetUniformLocation(sceneShaderProgram, "uPosition"), ball.position.x, ball.position.y);
+    glUniform2f(glGetUniformLocation(sceneShaderProgram, "uSize"), ball.size.x, ball.size.y);
 
-    SDL_RenderFillRect(renderer, &rect);
+    glBindVertexArray(ballVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
 
-    // Reset render target to default
-    SDL_SetRenderTarget(renderer, NULL);
-
-    // Clear the default render target
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
-    SDL_RenderClear(renderer);
-
-    // Copy texture to renderer, preserving aspect ratio
-    int currentWindowWidth, currentWindowHeight;
-    SDL_GetWindowSize(window, &currentWindowWidth, &currentWindowHeight);
-
-    const float aspectRatio = (float)windowWidth / (float)windowHeight;
-    int newWidth = currentWindowWidth;
-    int newHeight = (int)(currentWindowWidth / aspectRatio);
-
-    if (newHeight > currentWindowHeight)
-    {
-        newHeight = currentWindowHeight;
-        newWidth = (int)(currentWindowHeight * aspectRatio);
-    }
-
-    SDL_FRect dstRect = {
-        .x = (currentWindowWidth - newWidth) / 2,
-        .y = (currentWindowHeight - newHeight) / 2,
-        .w = newWidth,
-        .h = newHeight,
-    };
-
-    SDL_RenderTexture(renderer, renderTexture, NULL, &dstRect);
-
-    SDL_RenderPresent(renderer);
+    SDL_GL_SwapWindow(window);
 }
 
 int main(int argc, char **argv)
@@ -171,12 +361,12 @@ int main(int argc, char **argv)
 
         Input();
         Update(deltaTime);
-        Render(renderer);
+        Render();
     }
 
-    SDL_DestroyRenderer(renderer);
+    // SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
-    SDL_DestroyTexture(renderTexture);
+    // SDL_DestroyTexture(renderTexture);
     SDL_GL_DestroyContext(glContext);
     SDL_Quit();
 
