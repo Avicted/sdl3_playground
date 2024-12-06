@@ -15,7 +15,7 @@ typedef struct Ball // @Note: Actually a rectangle
 
 Ball ball = {
     .position = {320, 180},
-    .velocity = {0.6, 0.4},
+    .velocity = {0.6 * 3, 0.4 * 3},
     .size = {32, 32},
 };
 
