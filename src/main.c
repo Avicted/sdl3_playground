@@ -21,19 +21,20 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    while (1)
+    bool isRunning = true;
+
+    while (isRunning)
     {
-        int finished = 0;
         SDL_Event event;
         while (SDL_PollEvent(&event))
         {
             if (event.type == SDL_EVENT_QUIT)
             {
-                finished = 1;
+                isRunning = false;
                 break;
             }
         }
-        if (finished)
+        if (!isRunning)
         {
             break;
         }
