@@ -8,3 +8,10 @@ cd sdl3_playground
 make
 make run
 ```
+
+Features:
+- Variable resolution with preserved aspect ratio with black bars
+- Game loop:
+    - Input
+    - Update
+    - Render
