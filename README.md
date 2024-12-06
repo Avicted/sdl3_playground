@@ -11,8 +11,13 @@ make run
 
 Features:
 - OpenGL rendering
-- Variable resolution with preserved aspect ratio with black bars
+- Work in progress: Variable resolution with preserved aspect ratio with black bars
 - Game loop:
     - Input
     - Update
     - Render
+
+
+
+# TODO:
+- glm math library
