@@ -13,6 +13,69 @@ typedef struct Ball // @Note: Actually a rectangle
     Vec2 size;
 } Ball;
 
+Ball ball = {
+    .position = {320, 180},
+    .velocity = {0.6, 0.4},
+    .size = {32, 32},
+};
+
+static void
+Update(float deltaTime)
+{
+    // Update ball, bounce off walls
+    ball.position.x += ball.velocity.x * deltaTime;
+    ball.position.y += ball.velocity.y * deltaTime;
+
+    if (ball.position.x - ball.size.x < 0 || ball.position.x + ball.size.x > 640)
+    {
+        ball.velocity.x = -ball.velocity.x;
+    }
+
+    if (ball.position.y - ball.size.y < 0 || ball.position.y + ball.size.y > 360)
+    {
+        ball.velocity.y = -ball.velocity.y;
+    }
+
+    if (ball.position.x - ball.size.x < 0)
+    {
+        ball.position.x = ball.size.x;
+    }
+    else if (ball.position.x + ball.size.x > 640)
+    {
+        ball.position.x = 640 - ball.size.x;
+    }
+
+    if (ball.position.y - ball.size.y < 0)
+    {
+        ball.position.y = ball.size.y;
+    }
+    else if (ball.position.y + ball.size.y > 360)
+    {
+        ball.position.y = 360 - ball.size.y;
+    }
+}
+
+static void
+Render(SDL_Renderer *renderer)
+{
+    // Render background
+    SDL_SetRenderDrawColor(renderer, 40, 40, 80, SDL_ALPHA_OPAQUE);
+    SDL_RenderClear(renderer);
+
+    // Render ball
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, SDL_ALPHA_OPAQUE);
+    SDL_FRect rect = {
+        .x = ball.position.x - ball.size.x,
+        .y = ball.position.y - ball.size.y,
+        .w = ball.size.x * 2,
+        .h = ball.size.y * 2,
+    };
+
+    SDL_RenderFillRect(renderer, &rect);
+
+    SDL_RenderPresent(renderer);
+}
+
 int main(int argc, char **argv)
 {
     (void)argc;
@@ -34,12 +97,6 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    Ball ball = {
-        .position = {320, 180},
-        .velocity = {0.6, 0.4},
-        .size = {32, 32},
-    };
-
     bool isRunning = true;
 
     while (isRunning)
@@ -59,55 +116,8 @@ int main(int argc, char **argv)
         }
 
         const float deltaTime = 1.0f / 60.0f;
-
-        // Update ball, bounce off walls
-        ball.position.x += ball.velocity.x * deltaTime;
-        ball.position.y += ball.velocity.y * deltaTime;
-
-        if (ball.position.x - ball.size.x < 0 || ball.position.x + ball.size.x > 640)
-        {
-            ball.velocity.x = -ball.velocity.x;
-        }
-
-        if (ball.position.y - ball.size.y < 0 || ball.position.y + ball.size.y > 360)
-        {
-            ball.velocity.y = -ball.velocity.y;
-        }
-
-        if (ball.position.x - ball.size.x < 0)
-        {
-            ball.position.x = ball.size.x;
-        }
-        else if (ball.position.x + ball.size.x > 640)
-        {
-            ball.position.x = 640 - ball.size.x;
-        }
-
-        if (ball.position.y - ball.size.y < 0)
-        {
-            ball.position.y = ball.size.y;
-        }
-        else if (ball.position.y + ball.size.y > 360)
-        {
-            ball.position.y = 360 - ball.size.y;
-        }
-
-        // Render background
-        SDL_SetRenderDrawColor(renderer, 40, 40, 80, SDL_ALPHA_OPAQUE);
-        SDL_RenderClear(renderer);
-
-        // Render ball
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, SDL_ALPHA_OPAQUE);
-        SDL_FRect rect = {
-            .x = ball.position.x - ball.size.x,
-            .y = ball.position.y - ball.size.y,
-            .w = ball.size.x * 2,
-            .h = ball.size.y * 2,
-        };
-
-        SDL_RenderFillRect(renderer, &rect);
-
-        SDL_RenderPresent(renderer);
+        Update(deltaTime);
+        Render(renderer);
     }
 
     SDL_DestroyRenderer(renderer);
