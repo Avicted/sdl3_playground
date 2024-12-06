@@ -22,6 +22,7 @@ Ball ball = {
 bool isRunning = true;
 SDL_Window *window = NULL;
 SDL_Renderer *renderer = NULL;
+SDL_Texture *renderTexture = NULL;
 
 static int
 Init(void)
@@ -32,12 +33,15 @@ Init(void)
         return 1;
     }
 
-    if (!SDL_CreateWindowAndRenderer("SDL Playground", 640, 360, 0, &window, &renderer))
+    SDL_WindowFlags windowFlags = (SDL_WindowFlags)(SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL);
+    if (!SDL_CreateWindowAndRenderer("SDL Playground", 640, 360, windowFlags, &window, &renderer))
     {
         SDL_Log("SDL_CreateWindowAndRenderer failed (%s)", SDL_GetError());
         SDL_Quit();
         return 1;
     }
+
+    renderTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, 640, 360);
 
     return 0;
 }
@@ -94,6 +98,9 @@ Update(float deltaTime)
 static void
 Render(SDL_Renderer *renderer)
 {
+    // Set render target to texture
+    SDL_SetRenderTarget(renderer, renderTexture);
+
     // Render background
     SDL_SetRenderDrawColor(renderer, 40, 40, 80, SDL_ALPHA_OPAQUE);
     SDL_RenderClear(renderer);
@@ -108,6 +115,36 @@ Render(SDL_Renderer *renderer)
     };
 
     SDL_RenderFillRect(renderer, &rect);
+
+    // Reset render target to default
+    SDL_SetRenderTarget(renderer, NULL);
+
+    // Clear the default render target
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
+    SDL_RenderClear(renderer);
+
+    // Copy texture to renderer, preserving aspect ratio
+    int windowWidth, windowHeight;
+    SDL_GetWindowSize(window, &windowWidth, &windowHeight);
+
+    const float aspectRatio = 640.0f / 360.0f;
+    int newWidth = windowWidth;
+    int newHeight = (int)(windowWidth / aspectRatio);
+
+    if (newHeight > windowHeight)
+    {
+        newHeight = windowHeight;
+        newWidth = (int)(windowHeight * aspectRatio);
+    }
+
+    SDL_FRect dstRect = {
+        .x = (windowWidth - newWidth) / 2,
+        .y = (windowHeight - newHeight) / 2,
+        .w = newWidth,
+        .h = newHeight,
+    };
+
+    SDL_RenderTexture(renderer, renderTexture, NULL, &dstRect);
 
     SDL_RenderPresent(renderer);
 }
@@ -134,6 +171,7 @@ int main(int argc, char **argv)
 
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
+    SDL_DestroyTexture(renderTexture);
 
     SDL_Quit();
     return 0;

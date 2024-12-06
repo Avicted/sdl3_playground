@@ -1,6 +1,7 @@
 {
     "files.associations": {
         "format": "c",
-        "__node_handle": "c"
+        "__node_handle": "c",
+        "cstdlib": "c"
     }
 }
