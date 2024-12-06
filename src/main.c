@@ -20,6 +20,27 @@ Ball ball = {
 };
 
 bool isRunning = true;
+SDL_Window *window = NULL;
+SDL_Renderer *renderer = NULL;
+
+static int
+Init(void)
+{
+    if (!SDL_Init(SDL_INIT_VIDEO))
+    {
+        SDL_Log("SDL_Init failed (%s)", SDL_GetError());
+        return 1;
+    }
+
+    if (!SDL_CreateWindowAndRenderer("SDL Playground", 640, 360, 0, &window, &renderer))
+    {
+        SDL_Log("SDL_CreateWindowAndRenderer failed (%s)", SDL_GetError());
+        SDL_Quit();
+        return 1;
+    }
+
+    return 0;
+}
 
 static void
 Input(void)
@@ -96,20 +117,10 @@ int main(int argc, char **argv)
     (void)argc;
     (void)argv;
 
-    if (!SDL_Init(SDL_INIT_VIDEO))
+    int initSuccess = Init();
+    if (initSuccess > 0)
     {
-        SDL_Log("SDL_Init failed (%s)", SDL_GetError());
-        return 1;
-    }
-
-    SDL_Window *window = NULL;
-    SDL_Renderer *renderer = NULL;
-
-    if (!SDL_CreateWindowAndRenderer("SDL Playground", 640, 360, 0, &window, &renderer))
-    {
-        SDL_Log("SDL_CreateWindowAndRenderer failed (%s)", SDL_GetError());
-        SDL_Quit();
-        return 1;
+        return initSuccess;
     }
 
     while (isRunning)
