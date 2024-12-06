@@ -315,28 +315,28 @@ Update(float deltaTime)
     ball.position.x += ball.velocity.x * deltaTime;
     ball.position.y += ball.velocity.y * deltaTime;
 
-    if (ball.position.x - ball.size.x < 0 || ball.position.x + ball.size.x > windowWidth)
+    if (ball.position.x < 0 || ball.position.x + ball.size.x > windowWidth)
     {
         ball.velocity.x = -ball.velocity.x;
     }
 
-    if (ball.position.y - ball.size.y < 0 || ball.position.y + ball.size.y > windowHeight)
+    if (ball.position.y < 0 || ball.position.y + ball.size.y > windowHeight)
     {
         ball.velocity.y = -ball.velocity.y;
     }
 
-    if (ball.position.x - ball.size.x < 0)
+    if (ball.position.x < 0)
     {
-        ball.position.x = ball.size.x;
-        // Draw ball
-        glBindVertexArray(ballVAO);
-        glDrawArrays(GL_TRIANGLES, 0, 6);
+        ball.position.x = 0;
+    }
+    else if (ball.position.x + ball.size.x > windowWidth)
+    {
         ball.position.x = windowWidth - ball.size.x;
     }
 
-    if (ball.position.y - ball.size.y < 0)
+    if (ball.position.y < 0)
     {
-        ball.position.y = ball.size.y;
+        ball.position.y = 0;
     }
     else if (ball.position.y + ball.size.y > windowHeight)
     {
