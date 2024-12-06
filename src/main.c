@@ -23,6 +23,8 @@ bool isRunning = true;
 SDL_Window *window = NULL;
 SDL_Renderer *renderer = NULL;
 SDL_Texture *renderTexture = NULL;
+const int windowWidth = 640;
+const int windowHeight = 360;
 
 static int
 Init(void)
@@ -34,14 +36,14 @@ Init(void)
     }
 
     SDL_WindowFlags windowFlags = (SDL_WindowFlags)(SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL);
-    if (!SDL_CreateWindowAndRenderer("SDL Playground", 640, 360, windowFlags, &window, &renderer))
+    if (!SDL_CreateWindowAndRenderer("SDL Playground", windowWidth, windowHeight, windowFlags, &window, &renderer))
     {
         SDL_Log("SDL_CreateWindowAndRenderer failed (%s)", SDL_GetError());
         SDL_Quit();
         return 1;
     }
 
-    renderTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, 640, 360);
+    renderTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, windowWidth, windowHeight);
 
     return 0;
 }
@@ -66,12 +68,12 @@ Update(float deltaTime)
     ball.position.x += ball.velocity.x * deltaTime;
     ball.position.y += ball.velocity.y * deltaTime;
 
-    if (ball.position.x - ball.size.x < 0 || ball.position.x + ball.size.x > 640)
+    if (ball.position.x - ball.size.x < 0 || ball.position.x + ball.size.x > windowWidth)
     {
         ball.velocity.x = -ball.velocity.x;
     }
 
-    if (ball.position.y - ball.size.y < 0 || ball.position.y + ball.size.y > 360)
+    if (ball.position.y - ball.size.y < 0 || ball.position.y + ball.size.y > windowHeight)
     {
         ball.velocity.y = -ball.velocity.y;
     }
@@ -80,18 +82,18 @@ Update(float deltaTime)
     {
         ball.position.x = ball.size.x;
     }
-    else if (ball.position.x + ball.size.x > 640)
+    else if (ball.position.x + ball.size.x > windowWidth)
     {
-        ball.position.x = 640 - ball.size.x;
+        ball.position.x = windowWidth - ball.size.x;
     }
 
     if (ball.position.y - ball.size.y < 0)
     {
         ball.position.y = ball.size.y;
     }
-    else if (ball.position.y + ball.size.y > 360)
+    else if (ball.position.y + ball.size.y > windowHeight)
     {
-        ball.position.y = 360 - ball.size.y;
+        ball.position.y = windowHeight - ball.size.y;
     }
 }
 
@@ -124,22 +126,22 @@ Render(SDL_Renderer *renderer)
     SDL_RenderClear(renderer);
 
     // Copy texture to renderer, preserving aspect ratio
-    int windowWidth, windowHeight;
-    SDL_GetWindowSize(window, &windowWidth, &windowHeight);
+    int currentWindowWidth, currentWindowHeight;
+    SDL_GetWindowSize(window, &currentWindowWidth, &currentWindowHeight);
 
-    const float aspectRatio = 640.0f / 360.0f;
-    int newWidth = windowWidth;
-    int newHeight = (int)(windowWidth / aspectRatio);
+    const float aspectRatio = (float)windowWidth / (float)windowHeight;
+    int newWidth = currentWindowWidth;
+    int newHeight = (int)(currentWindowWidth / aspectRatio);
 
-    if (newHeight > windowHeight)
+    if (newHeight > currentWindowHeight)
     {
-        newHeight = windowHeight;
-        newWidth = (int)(windowHeight * aspectRatio);
+        newHeight = currentWindowHeight;
+        newWidth = (int)(currentWindowHeight * aspectRatio);
     }
 
     SDL_FRect dstRect = {
-        .x = (windowWidth - newWidth) / 2,
-        .y = (windowHeight - newHeight) / 2,
+        .x = (currentWindowWidth - newWidth) / 2,
+        .y = (currentWindowHeight - newHeight) / 2,
         .w = newWidth,
         .h = newHeight,
     };

@@ -2,6 +2,24 @@
     "files.associations": {
         "format": "c",
         "__node_handle": "c",
-        "cstdlib": "c"
+        "cstdlib": "c",
+        "array": "c",
+        "hash_map": "c",
+        "bitset": "c",
+        "string_view": "c",
+        "initializer_list": "c",
+        "span": "c",
+        "__hash_table": "c",
+        "__split_buffer": "c",
+        "__tree": "c",
+        "deque": "c",
+        "list": "c",
+        "map": "c",
+        "queue": "c",
+        "stack": "c",
+        "string": "c",
+        "unordered_map": "c",
+        "valarray": "c",
+        "vector": "c"
     }
 }
