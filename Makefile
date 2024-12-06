@@ -2,11 +2,11 @@ CC = gcc
 
 CFLAGS = -Wall -Wextra -Werror -O0 -std=c99 -ggdb
 
-INCLUDES = -I./submodules/SDL/include
+INCLUDES = -I./submodules/SDL/include -I./include -I/include/glad
 
 LIBS = -L./submodules/SDL/build -lSDL3
 
-SRC = src/main.c
+SRC = src/main.c src/gl.c
 
 EXE = build/SDL_playground
 
@@ -16,7 +16,7 @@ all: SDL $(EXE)
 # Build the main executable
 $(EXE): $(SRC)
 	$(shell mkdir -p build)
-	$(CC) $(CFLAGS) $(INCLUDES) $(INC) -o $(EXE) $(SRC) $(LIBS)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $(EXE) $(SRC) $(LIBS)
 
 
 SDL:
