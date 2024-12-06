@@ -42,17 +42,18 @@ GLuint fboShaderProgram;
 // -------------------------------------------------------------------------------
 
 static void
-ResizeWindow(int newWidth, int newHeight)
+ResizeWindow(void)
 {
-    int newWindowWidth = newWidth;
-    int newwindowHeight = newHeight;
+
+    // int newWindowWidth = newWidth;
+    // int newwindowHeight = newHeight;
 
     // Update the projection matrix for correct aspect ratio
-    glm::mat4 projection = glm::perspective(
-        glm::radians(45.0f),
-        (float)newindowWidth / (float)newWindowHeight,
-        0.1f,
-        100.0f);
+    //  glm::mat4 projection = glm::perspective(
+    //      glm::radians(45.0f),
+    //      (float)newindowWidth / (float)newWindowHeight,
+    //      0.1f,
+    //      100.0f);
 }
 
 static void
@@ -334,7 +335,8 @@ Input(void)
                 glViewport(0, yOffset, newWidth, viewportHeight);
             }
 
-            ResizeWindow(newWidth, newHeight);
+            // ResizeWindow(newWidth, newHeight);
+            ResizeWindow();
         }
     }
 }
