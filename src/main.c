@@ -41,6 +41,49 @@ GLuint fboShaderProgram;
 
 // -------------------------------------------------------------------------------
 
+static void
+ResizeWindow(int newWidth, int newHeight)
+{
+    int newWindowWidth = newWidth;
+    int newwindowHeight = newHeight;
+
+    // Update the projection matrix for correct aspect ratio
+    glm::mat4 projection = glm::perspective(
+        glm::radians(45.0f),
+        (float)newindowWidth / (float)newWindowHeight,
+        0.1f,
+        100.0f);
+}
+
+static void
+SetupFboQuad()
+{
+    float quadVertices[] = {
+        // positions       // texture coords
+        -1.0f, 1.0f, 0.0f, 0.0f, 1.0f,
+        -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
+        1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
+
+        -1.0f, 1.0f, 0.0f, 0.0f, 1.0f,
+        1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
+        1.0f, 1.0f, 0.0f, 1.0f, 1.0f};
+
+    glGenVertexArrays(1, &fboVAO);
+    glGenBuffers(1, &fboVBO);
+
+    glBindVertexArray(fboVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, fboVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)0);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+}
+
 static char *
 ReadShaderSource(const char *filePath)
 {
@@ -247,8 +290,12 @@ Init(void)
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
+    // Load shaders
     sceneShaderProgram = LoadSceneShader();
     fboShaderProgram = LoadFboShader();
+
+    // Call SetupFboQuad to initialize the full-screen quad
+    SetupFboQuad();
 
     return 0;
 }
@@ -286,6 +333,8 @@ Input(void)
                 int yOffset = (newHeight - viewportHeight) / 2;
                 glViewport(0, yOffset, newWidth, viewportHeight);
             }
+
+            ResizeWindow(newWidth, newHeight);
         }
     }
 }
@@ -329,17 +378,29 @@ Update(float deltaTime)
 static void
 Render(void)
 {
+    // Step 1: Render to the FBO
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
+    // Render scene (ball) to the FBO
     glUseProgram(sceneShaderProgram);
-
     glUniform2f(glGetUniformLocation(sceneShaderProgram, "uResolution"), windowWidth, windowHeight);
     glUniform2f(glGetUniformLocation(sceneShaderProgram, "uPosition"), ball.position.x, ball.position.y);
     glUniform2f(glGetUniformLocation(sceneShaderProgram, "uSize"), ball.size.x, ball.size.y);
 
     glBindVertexArray(ballVAO);
     glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    // Step 2: Render the FBO texture to the default framebuffer (the window)
+    glBindFramebuffer(GL_FRAMEBUFFER, 0); // Bind to the default framebuffer (the window)
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // Use the FBO shader to display the FBO texture to the screen
+    glUseProgram(fboShaderProgram);
+    glBindVertexArray(fboVAO);
+    glBindTexture(GL_TEXTURE_2D, fboTexture);
+    glDrawArrays(GL_TRIANGLES, 0, 6); // Draw a full-screen quad with the FBO texture
 
     SDL_GL_SwapWindow(window);
 }
