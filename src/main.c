@@ -25,6 +25,7 @@ SDL_Renderer *renderer = NULL;
 SDL_Texture *renderTexture = NULL;
 const int windowWidth = 640;
 const int windowHeight = 360;
+SDL_GLContext glContext = NULL;
 
 static int
 Init(void)
@@ -44,6 +45,8 @@ Init(void)
     }
 
     renderTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, windowWidth, windowHeight);
+
+    glContext = SDL_GL_CreateContext(window);
 
     return 0;
 }
@@ -174,7 +177,8 @@ int main(int argc, char **argv)
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_DestroyTexture(renderTexture);
-
+    SDL_GL_DestroyContext(glContext);
     SDL_Quit();
+
     return 0;
 }
