@@ -10,6 +10,8 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
+#include <algorithm>
+
 typedef struct Vec2
 {
     float x;
@@ -25,26 +27,50 @@ typedef struct Ball // @Note: Actually a rectangle
 
 Ball ball = {
     .position = {320, 180},
-    .velocity = {128, 64},
+    .velocity = {128 * 2, 64 * 2},
     .size = {32, 32},
 };
 
 bool isRunning = true;
 SDL_Window *window = NULL;
-const int windowWidth = 640;
-const int windowHeight = 360;
+const int windowWidth = 640 * 2;
+const int windowHeight = 360 * 2;
 SDL_GLContext glContext = NULL;
 
 GLuint fbo, fboTexture;
 GLuint fboVAO, fboVBO;
 GLuint ballVAO, ballVBO;
 GLuint ballTexture;
+glm::mat4 projectionMatrix;
 
 // Shaders
 GLuint sceneShaderProgram;
 GLuint fboShaderProgram;
 
 // -------------------------------------------------------------------------------
+static glm::mat4
+CalculateProjection(int width, int height)
+{
+    float aspectRatio = (float)windowWidth / (float)windowHeight;
+    float currentAspectRatio = (float)width / (float)height;
+
+    float scaleX = 1.0f;
+    float scaleY = 1.0f;
+
+    if (currentAspectRatio > aspectRatio)
+    {
+        scaleX = currentAspectRatio / aspectRatio;
+    }
+    else
+    {
+        scaleY = aspectRatio / currentAspectRatio;
+    }
+
+    return glm::ortho(
+        -scaleX * windowWidth / 2.0f, scaleX * windowWidth / 2.0f,
+        -scaleY * windowHeight / 2.0f, scaleY * windowHeight / 2.0f,
+        -1.0f, 1.0f);
+}
 
 static void
 ResizeFboTexture(int newWidth, int newHeight)
@@ -77,7 +103,9 @@ ResizeWindow(int newWidth, int newHeight)
     // Update the OpenGL viewport to match the centered render area
     glViewport(offsetX, offsetY, finalWidth, finalHeight);
 
-    ResizeFboTexture(windowWidth, windowHeight);
+    ResizeFboTexture(newWidth, newHeight);
+
+    projectionMatrix = CalculateProjection(newWidth, newHeight);
 }
 
 static void
@@ -374,36 +402,31 @@ Input(void)
 static void
 Update(float deltaTime)
 {
-    // Update ball, bounce off walls
+    // Update ball position using the original window dimensions
     ball.position.x += ball.velocity.x * deltaTime;
     ball.position.y += ball.velocity.y * deltaTime;
 
-    if (ball.position.x < 0 || ball.position.x + ball.size.x > windowWidth)
-    {
-        ball.velocity.x = -ball.velocity.x;
-    }
-
-    if (ball.position.y < 0 || ball.position.y + ball.size.y > windowHeight)
-    {
-        ball.velocity.y = -ball.velocity.y;
-    }
-
+    // Bounce off walls using the original window dimensions
     if (ball.position.x < 0)
     {
         ball.position.x = 0;
+        ball.velocity.x = -ball.velocity.x;
     }
     else if (ball.position.x + ball.size.x > windowWidth)
     {
         ball.position.x = windowWidth - ball.size.x;
+        ball.velocity.x = -ball.velocity.x;
     }
 
     if (ball.position.y < 0)
     {
         ball.position.y = 0;
+        ball.velocity.y = -ball.velocity.y;
     }
     else if (ball.position.y + ball.size.y > windowHeight)
     {
         ball.position.y = windowHeight - ball.size.y;
+        ball.velocity.y = -ball.velocity.y;
     }
 }
 
@@ -424,12 +447,17 @@ Render(void)
     glUseProgram(sceneShaderProgram);
     glBindVertexArray(ballVAO);
 
-    // Draw ball with normalized coordinates
+    // Draw ball with normalized coordinates using original window dimensions
     glm::mat4 model = glm::mat4(1.0f);
+
     float normX = (ball.position.x / (float)windowWidth) * 2.0f - 1.0f;
     float normY = 1.0f - (ball.position.y / (float)windowHeight) * 2.0f;
     model = glm::translate(model, glm::vec3(normX, normY, 0.0f));
-    model = glm::scale(model, glm::vec3(ball.size.x / windowWidth * 2.0f, ball.size.y / windowHeight * 2.0f, 1.0f));
+
+    float scaleFactor = std::min((float)windowWidth, (float)windowHeight);
+    float scaleX = (ball.size.x / scaleFactor) * 2.0f;
+    float scaleY = (ball.size.y / scaleFactor) * 2.0f;
+    model = glm::scale(model, glm::vec3(scaleX, scaleY, 1.0f));
 
     glUniformMatrix4fv(glGetUniformLocation(sceneShaderProgram, "u_model"), 1, GL_FALSE, glm::value_ptr(model));
     glUniform1i(glGetUniformLocation(sceneShaderProgram, "ourTexture"), 0);

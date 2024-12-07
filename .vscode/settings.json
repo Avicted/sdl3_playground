@@ -22,6 +22,7 @@
         "valarray": "c",
         "vector": "c",
         "gl.h": "c",
-        "stdbool.h": "c"
+        "stdbool.h": "c",
+        "ios": "cpp"
     }
 }
