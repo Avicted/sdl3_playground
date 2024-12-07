@@ -12,7 +12,7 @@
             "environment": [
                 {
                     "name": "LD_LIBRARY_PATH",
-                    "value": "${workspaceFolder}/submodules/SDL/build:$LD_LIBRARY_PATH"
+                    "value": "${workspaceFolder}/submodules/SDL/build:${workspaceFolder}/submodules/glm/build/glm:$LD_LIBRARY_PATH"
                 }
             ],
             "externalConsole": false,

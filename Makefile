@@ -1,24 +1,25 @@
 CC = gcc
+CXX = g++
 
 CFLAGS = -Wall -Wextra -Werror -O0 -std=c99 -ggdb
+CXXFLAGS = -Wall -Wextra -Werror -O0 -std=c++11 -ggdb
 
-INCLUDES = -I./submodules/SDL/include -I./include -I/include/glad
+INCLUDES = -I./submodules/SDL/include -I./include -I/include/glad -I./submodules/glm
 
-LIBS = -L./submodules/SDL/build -lSDL3
+LIBS = -L./submodules/SDL/build -L./submodules/glm/build/glm -lSDL3 -lglm -lm
 
 SRC = src/main.c src/gl.c
 
 EXE = build/SDL_playground
 
 # Build everything
-all: SDL $(EXE)
+all: SDL glm $(EXE)
 
 # Build the main executable
 $(EXE): $(SRC)
 	cp -r shaders build/
 	$(shell mkdir -p build)
-	$(CC) $(CFLAGS) $(INCLUDES) -o $(EXE) $(SRC) $(LIBS)
-
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $(EXE) $(SRC) $(LIBS)
 
 SDL:
 	cd submodules/SDL && \
@@ -26,13 +27,20 @@ SDL:
 	cmake -G Ninja -DCMAKE_BUILD_TYPE=Release .. && \
 	cmake --build . --config Release --parallel
 
+glm:
+	cd submodules/glm && \
+	cmake \
+		-DGLM_BUILD_TESTS=OFF \
+		-DBUILD_SHARED_LIBS=ON \
+		-B build . && \
+	cmake --build build -- all
 
 clean:
 	rm -f $(EXE)
 	rm -rf build
 
 run: $(EXE)
-	LD_LIBRARY_PATH=$(CURDIR)/submodules/SDL/build:$$LD_LIBRARY_PATH $(EXE)
+	LD_LIBRARY_PATH=$(CURDIR)/submodules/SDL/build:$(CURDIR)/submodules/glm/build/glm:$$LD_LIBRARY_PATH $(EXE)
 
 help:
 	@echo "Usage: make [all|clean|run|help]"
