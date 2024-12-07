@@ -16,8 +16,3 @@ Features:
     - Input
     - Update
     - Render
-
-
-
-# TODO:
-- glm math library
