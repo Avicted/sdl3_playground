@@ -3,6 +3,8 @@
 #include <glad/gl.h>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,6 +38,7 @@ SDL_GLContext glContext = NULL;
 GLuint fbo, fboTexture;
 GLuint fboVAO, fboVBO;
 GLuint ballVAO, ballVBO;
+GLuint ballTexture;
 
 // Shaders
 GLuint sceneShaderProgram;
@@ -44,18 +47,37 @@ GLuint fboShaderProgram;
 // -------------------------------------------------------------------------------
 
 static void
-ResizeWindow(void)
+ResizeFboTexture(int newWidth, int newHeight)
 {
+    glBindTexture(GL_TEXTURE_2D, fboTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, newWidth, newHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
 
-    // int newWindowWidth = newWidth;
-    // int newwindowHeight = newHeight;
+static void
+ResizeWindow(int newWidth, int newHeight)
+{
+    // Original aspect ratio of the FBO
+    float aspectRatio = (float)windowWidth / (float)windowHeight;
 
-    // Update the projection matrix for correct aspect ratio
-    //  glm::mat4 projection = glm::perspective(
-    //      glm::radians(45.0f),
-    //      (float)newindowWidth / (float)newWindowHeight,
-    //      0.1f,
-    //      100.0f);
+    // Calculate the final rendering dimensions
+    int finalWidth = newWidth;
+    int finalHeight = (int)(newWidth / aspectRatio);
+
+    if (finalHeight > newHeight)
+    {
+        finalHeight = newHeight;
+        finalWidth = (int)(newHeight * aspectRatio);
+    }
+
+    // Compute black bar offsets
+    int offsetX = (newWidth - finalWidth) / 2;
+    int offsetY = (newHeight - finalHeight) / 2;
+
+    // Update the OpenGL viewport to match the centered render area
+    glViewport(offsetX, offsetY, finalWidth, finalHeight);
+
+    ResizeFboTexture(windowWidth, windowHeight);
 }
 
 static void
@@ -169,16 +191,15 @@ LoadSceneShader()
         return 0;
     }
 
-    // Setup ball VAO and VBO
     float ballVertices[] = {
-        // positions       // texture coords
-        0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
-        1.0f, 0.0f, 0.0f, 1.0f, 0.0f,
-        0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+        // positions        // texture coords
+        0.5f, 0.5f, 0.0f, 1.0f, 1.0f,
+        0.5f, -0.5f, 0.0f, 1.0f, 0.0f,
+        -0.5f, -0.5f, 0.0f, 0.0f, 0.0f,
 
-        0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
-        1.0f, 1.0f, 0.0f, 1.0f, 1.0f,
-        1.0f, 0.0f, 0.0f, 1.0f, 0.0f};
+        0.5f, 0.5f, 0.0f, 1.0f, 1.0f,
+        -0.5f, -0.5f, 0.0f, 0.0f, 0.0f,
+        -0.5f, 0.5f, 0.0f, 0.0f, 1.0f};
 
     glGenVertexArrays(1, &ballVAO);
     glGenBuffers(1, &ballVBO);
@@ -190,6 +211,7 @@ LoadSceneShader()
 
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)0);
     glEnableVertexAttribArray(0);
+
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
 
@@ -200,6 +222,14 @@ LoadSceneShader()
     GLuint fragmentShader = CompileShader(fragmentSource, GL_FRAGMENT_SHADER);
 
     GLuint program = LinkProgram(vertexShader, fragmentShader);
+
+    if (!program)
+    {
+        fprintf(stderr, "Failed to link scene shader program\n");
+        fprintf(stderr, "Vertex Shader:\n%s\n", vertexSource);
+        fprintf(stderr, "Fragment Shader:\n%s\n", fragmentSource);
+        return 0;
+    }
 
     // Cleanup
     glDeleteShader(vertexShader);
@@ -226,6 +256,14 @@ LoadFboShader()
     GLuint fragmentShader = CompileShader(fragmentSource, GL_FRAGMENT_SHADER);
 
     GLuint program = LinkProgram(vertexShader, fragmentShader);
+
+    if (!program)
+    {
+        fprintf(stderr, "Failed to link FBO shader program\n");
+        fprintf(stderr, "Vertex Shader:\n%s\n", vertexSource);
+        fprintf(stderr, "Fragment Shader:\n%s\n", fragmentSource);
+        return 0;
+    }
 
     // Cleanup
     glDeleteShader(vertexShader);
@@ -274,6 +312,14 @@ Init(void)
 
     glViewport(0, 0, windowWidth, windowHeight);
 
+    // Create ball texture
+    glGenTextures(1, &ballTexture);
+    glBindTexture(GL_TEXTURE_2D, ballTexture);
+    unsigned char whitePixel[] = {255, 255, 255, 255};
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, whitePixel);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
     // Create FBO
     glGenFramebuffers(1, &fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
@@ -319,26 +365,8 @@ Input(void)
             int newWidth, newHeight;
             SDL_GetWindowSizeInPixels(window, &newWidth, &newHeight);
 
-            float aspectRatio = (float)windowWidth / (float)windowHeight;
-            float newAspectRatio = (float)newWidth / (float)newHeight;
-
-            if (newAspectRatio > aspectRatio)
-            {
-                // Wider: Add black bars on the sides
-                int viewportWidth = (int)(newHeight * aspectRatio);
-                int xOffset = (newWidth - viewportWidth) / 2;
-                glViewport(xOffset, 0, viewportWidth, newHeight);
-            }
-            else
-            {
-                // Taller: Add black bars on the top and bottom
-                int viewportHeight = (int)(newWidth / aspectRatio);
-                int yOffset = (newHeight - viewportHeight) / 2;
-                glViewport(0, yOffset, newWidth, viewportHeight);
-            }
-
-            // ResizeWindow(newWidth, newHeight);
-            ResizeWindow();
+            // Keep the initial aspect ratio of the canvas
+            ResizeWindow(newWidth, newHeight);
         }
     }
 }
@@ -382,30 +410,57 @@ Update(float deltaTime)
 static void
 Render(void)
 {
-    // Step 1: Render to the FBO
+    GLenum err;
+    while ((err = glGetError()) != GL_NO_ERROR)
+    {
+        printf("OpenGL Error: %d\n", err);
+    }
+
+    // Clear
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-    glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+    glClearColor(1.0f, 0.0f, 1.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    // Render scene (ball) to the FBO
     glUseProgram(sceneShaderProgram);
-    glUniform2f(glGetUniformLocation(sceneShaderProgram, "uResolution"), windowWidth, windowHeight);
-    glUniform2f(glGetUniformLocation(sceneShaderProgram, "uPosition"), ball.position.x, ball.position.y);
-    glUniform2f(glGetUniformLocation(sceneShaderProgram, "uSize"), ball.size.x, ball.size.y);
-
     glBindVertexArray(ballVAO);
+
+    // Draw ball with normalized coordinates
+    glm::mat4 model = glm::mat4(1.0f);
+    float normX = (ball.position.x / (float)windowWidth) * 2.0f - 1.0f;
+    float normY = 1.0f - (ball.position.y / (float)windowHeight) * 2.0f;
+    model = glm::translate(model, glm::vec3(normX, normY, 0.0f));
+    model = glm::scale(model, glm::vec3(ball.size.x / windowWidth * 2.0f, ball.size.y / windowHeight * 2.0f, 1.0f));
+
+    glUniformMatrix4fv(glGetUniformLocation(sceneShaderProgram, "u_model"), 1, GL_FALSE, glm::value_ptr(model));
+    glUniform1i(glGetUniformLocation(sceneShaderProgram, "ourTexture"), 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, ballTexture);
     glDrawArrays(GL_TRIANGLES, 0, 6);
 
-    // Step 2: Render the FBO texture to the default framebuffer (the window)
-    glBindFramebuffer(GL_FRAMEBUFFER, 0); // Bind to the default framebuffer (the window)
+    glBindVertexArray(0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    // ----------------------------
+
+    // Render the FBO texture to the screen
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    // Use the FBO shader to display the FBO texture to the screen
     glUseProgram(fboShaderProgram);
+    glUniform1i(glGetUniformLocation(fboShaderProgram, "screenTexture"), 0);
+    glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(fboVAO);
-    glBindTexture(GL_TEXTURE_2D, fboTexture);
-    glDrawArrays(GL_TRIANGLES, 0, 6); // Draw a full-screen quad with the FBO texture
 
+    glBindTexture(GL_TEXTURE_2D, fboTexture);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    glBindVertexArray(0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    // ----------------------------
+
+    // Swap buffers
     SDL_GL_SwapWindow(window);
 }
 
