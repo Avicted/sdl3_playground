@@ -18,6 +18,7 @@ all: SDL glm $(EXE)
 # Build the main executable
 $(EXE): $(SRC)
 	cp -r shaders build/
+	cp -r resources build/
 	$(shell mkdir -p build)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $(EXE) $(SRC) $(LIBS)
 

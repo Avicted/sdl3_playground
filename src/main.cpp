@@ -12,36 +12,54 @@
 
 #include <algorithm>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
 typedef struct Vec2
 {
     float x;
     float y;
+
+    Vec2 &operator+=(const Vec2 &other)
+    {
+        x += other.x;
+        y += other.y;
+        return *this;
+    }
 } Vec2;
 
 typedef struct Ball // @Note: Actually a rectangle
 {
     Vec2 position;
     Vec2 velocity;
-    Vec2 size;
+    float radius;
 } Ball;
 
 Ball ball = {
-    .position = {320, 180},
-    .velocity = {128 * 2, 64 * 2},
-    .size = {32, 32},
+    .position = {0.0f, 0.0f},
+    .velocity = {0.4f, 0.6f},
+    .radius = 64.0f,
 };
 
 bool isRunning = true;
 SDL_Window *window = NULL;
-const int windowWidth = 640 * 2;
-const int windowHeight = 360 * 2;
+bool isFullscreen = false;
+const int GAME_WIDTH = 640;
+const int GAME_HEIGHT = 360;
 SDL_GLContext glContext = NULL;
+int windowWidth = GAME_WIDTH;
+int windowHeight = GAME_HEIGHT;
+
+const float left = -GAME_WIDTH / 2;
+const float right = GAME_WIDTH / 2;
+const float top = GAME_HEIGHT / 2;
+const float bottom = -GAME_HEIGHT / 2;
 
 GLuint fbo, fboTexture;
 GLuint fboVAO, fboVBO;
 GLuint ballVAO, ballVBO;
 GLuint ballTexture;
-glm::mat4 projectionMatrix;
+glm::mat4 projectionMatrix = glm::ortho(left, right, bottom, top, -1.0f, 1.0f);
 
 // Shaders
 GLuint sceneShaderProgram;
@@ -49,9 +67,20 @@ GLuint fboShaderProgram;
 
 // -------------------------------------------------------------------------------
 static glm::mat4
-CalculateProjection(int width, int height)
+CalculateProjection(int width, int height, int offsetX, int offsetY)
 {
-    float aspectRatio = (float)windowWidth / (float)windowHeight;
+    static int cachedWidth = 0;
+    static int cachedHeight = 0;
+    static int cachedOffsetX = 0;
+    static int cachedOffsetY = 0;
+    static glm::mat4 cachedProjectionMatrix;
+
+    if (width == cachedWidth && height == cachedHeight && offsetX == cachedOffsetX && offsetY == cachedOffsetY)
+    {
+        return cachedProjectionMatrix;
+    }
+
+    float aspectRatio = static_cast<float>(GAME_WIDTH) / static_cast<float>(GAME_HEIGHT);
     float currentAspectRatio = (float)width / (float)height;
 
     float scaleX = 1.0f;
@@ -66,10 +95,17 @@ CalculateProjection(int width, int height)
         scaleY = aspectRatio / currentAspectRatio;
     }
 
-    return glm::ortho(
-        -scaleX * windowWidth / 2.0f, scaleX * windowWidth / 2.0f,
-        -scaleY * windowHeight / 2.0f, scaleY * windowHeight / 2.0f,
+    cachedProjectionMatrix = glm::ortho(
+        -scaleX * GAME_WIDTH / 2.0f + (offsetX / scaleX), scaleX * GAME_WIDTH / 2.0f + (offsetX / scaleX),
+        -scaleY * GAME_HEIGHT / 2.0f + (offsetY / scaleY), scaleY * GAME_HEIGHT / 2.0f + (offsetY / scaleY),
         -1.0f, 1.0f);
+
+    cachedWidth = width;
+    cachedHeight = height;
+    cachedOffsetX = offsetX;
+    cachedOffsetY = offsetY;
+
+    return cachedProjectionMatrix;
 }
 
 static void
@@ -80,32 +116,34 @@ ResizeFboTexture(int newWidth, int newHeight)
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-static void
-ResizeWindow(int newWidth, int newHeight)
+void ResizeWindow(int width, int height)
 {
-    // Original aspect ratio of the FBO
-    float aspectRatio = (float)windowWidth / (float)windowHeight;
+    float gameAspectRatio = (float)GAME_WIDTH / (float)GAME_HEIGHT;
+    float currentAspectRatio = (float)width / (float)height;
 
-    // Calculate the final rendering dimensions
-    int finalWidth = newWidth;
-    int finalHeight = (int)(newWidth / aspectRatio);
+    int viewportWidth, viewportHeight;
+    int viewportX = 0, viewportY = 0;
 
-    if (finalHeight > newHeight)
+    if (currentAspectRatio > gameAspectRatio)
     {
-        finalHeight = newHeight;
-        finalWidth = (int)(newHeight * aspectRatio);
+        viewportHeight = height;
+        viewportWidth = (int)(height * gameAspectRatio);
+        viewportX = (width - viewportWidth) / 2;
+    }
+    else
+    {
+        viewportWidth = width;
+        viewportHeight = (int)(width / gameAspectRatio);
+        viewportY = (height - viewportHeight) / 2;
     }
 
-    // Compute black bar offsets
-    int offsetX = (newWidth - finalWidth) / 2;
-    int offsetY = (newHeight - finalHeight) / 2;
+    glViewport(viewportX, viewportY, viewportWidth, viewportHeight);
 
-    // Update the OpenGL viewport to match the centered render area
-    glViewport(offsetX, offsetY, finalWidth, finalHeight);
+    glm::mat4 projection = CalculateProjection(viewportWidth, viewportHeight, viewportX, viewportY);
+    glUseProgram(sceneShaderProgram);
+    glUniformMatrix4fv(glGetUniformLocation(sceneShaderProgram, "u_mvp"), 1, GL_FALSE, glm::value_ptr(projection));
 
-    ResizeFboTexture(newWidth, newHeight);
-
-    projectionMatrix = CalculateProjection(newWidth, newHeight);
+    ResizeFboTexture(viewportWidth, viewportHeight);
 }
 
 static void
@@ -316,7 +354,7 @@ Init(void)
     }
 
     SDL_WindowFlags windowFlags = (SDL_WindowFlags)(SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL);
-    window = SDL_CreateWindow("SDL Playground", windowWidth, windowHeight, windowFlags);
+    window = SDL_CreateWindow("SDL Playground", GAME_WIDTH, GAME_HEIGHT, windowFlags);
     if (!window)
     {
         SDL_Log("SDL_CreateWindow failed (%s)", SDL_GetError());
@@ -338,7 +376,7 @@ Init(void)
     SDL_Log("OpenGL Version: %s", glGetString(GL_VERSION));
     SDL_Log("GLSL Version: %s", glGetString(GL_SHADING_LANGUAGE_VERSION));
 
-    glViewport(0, 0, windowWidth, windowHeight);
+    glViewport(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
     // Create ball texture
     glGenTextures(1, &ballTexture);
@@ -348,6 +386,20 @@ Init(void)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
+    // Load resources/uv_test.png
+    int width, height, channels;
+    unsigned char *image = stbi_load("resources/uv_test.png", &width, &height, &channels, 0);
+    if (!image)
+    {
+        SDL_Log("Failed to load image: %s", stbi_failure_reason());
+        return 1;
+    }
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image);
+    // glGenerateMipmap(GL_TEXTURE_2D);
+
+    stbi_image_free(image);
+
     // Create FBO
     glGenFramebuffers(1, &fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
@@ -355,7 +407,7 @@ Init(void)
     // Create texture for the FBO
     glGenTextures(1, &fboTexture);
     glBindTexture(GL_TEXTURE_2D, fboTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, windowWidth, windowHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, GAME_WIDTH, GAME_HEIGHT, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fboTexture, 0);
@@ -373,6 +425,8 @@ Init(void)
 
     // Call SetupFboQuad to initialize the full-screen quad
     SetupFboQuad();
+
+    ResizeWindow(GAME_WIDTH, GAME_HEIGHT);
 
     return 0;
 }
@@ -396,38 +450,45 @@ Input(void)
             // Keep the initial aspect ratio of the canvas
             ResizeWindow(newWidth, newHeight);
         }
+
+        if (event.type == SDL_EVENT_KEY_DOWN)
+        {
+            if (event.key.key == SDLK_F11)
+            {
+                isFullscreen = !isFullscreen;
+                SDL_SetWindowFullscreen(window, isFullscreen ? SDL_WINDOW_FULLSCREEN : 0);
+            }
+        }
     }
 }
 
 static void
-Update(float deltaTime)
+UpdateBall(Ball &ball, float left, float right, float top, float bottom)
 {
-    // Update ball position using the original window dimensions
-    ball.position.x += ball.velocity.x * deltaTime;
-    ball.position.y += ball.velocity.y * deltaTime;
+    // Update position
+    ball.position.x += ball.velocity.x;
+    ball.position.y += ball.velocity.y;
 
-    // Bounce off walls using the original window dimensions
-    if (ball.position.x < 0)
+    // Check for collisions with boundaries
+    if (ball.position.x - (ball.radius / 2) < left || ball.position.x + (ball.radius / 2) > right)
     {
-        ball.position.x = 0;
-        ball.velocity.x = -ball.velocity.x;
-    }
-    else if (ball.position.x + ball.size.x > windowWidth)
-    {
-        ball.position.x = windowWidth - ball.size.x;
-        ball.velocity.x = -ball.velocity.x;
+        ball.velocity.x *= -1; // Reverse X velocity
+        ball.position.x = glm::clamp(ball.position.x, left + (ball.radius / 2), right - (ball.radius / 2));
     }
 
-    if (ball.position.y < 0)
+    if (ball.position.y - (ball.radius / 2) < bottom || ball.position.y + (ball.radius / 2) > top)
     {
-        ball.position.y = 0;
-        ball.velocity.y = -ball.velocity.y;
+        ball.velocity.y *= -1; // Reverse Y velocity
+        ball.position.y = glm::clamp(ball.position.y, bottom + (ball.radius / 2), top - (ball.radius / 2));
     }
-    else if (ball.position.y + ball.size.y > windowHeight)
-    {
-        ball.position.y = windowHeight - ball.size.y;
-        ball.velocity.y = -ball.velocity.y;
-    }
+
+    // printf("Ball position: (%f, %f)\n", ball.position.x, ball.position.y);
+}
+
+static void
+Update(void)
+{
+    UpdateBall(ball, left, right, top, bottom);
 }
 
 static void
@@ -439,27 +500,38 @@ Render(void)
         printf("OpenGL Error: %d\n", err);
     }
 
-    // Clear
+    // Bind the FBO and clear it
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-    glClearColor(1.0f, 0.0f, 1.0f, 1.0f);
+    glClearColor(0.1f, 0.0f, 0.2f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
+    // Use the scene shader program
     glUseProgram(sceneShaderProgram);
     glBindVertexArray(ballVAO);
 
-    // Draw ball with normalized coordinates using original window dimensions
+    // Ball rendering with aspect ratio correction
+    float gameAspectRatio = (float)GAME_WIDTH / (float)GAME_HEIGHT;
+    float currentAspectRatio = (float)windowWidth / (float)windowHeight;
+    float scaleX = ball.radius;
+    float scaleY = ball.radius;
+
+    if (currentAspectRatio > gameAspectRatio)
+    {
+        scaleY *= currentAspectRatio / gameAspectRatio;
+    }
+    else
+    {
+        scaleX *= gameAspectRatio / currentAspectRatio;
+    }
+
     glm::mat4 model = glm::mat4(1.0f);
-
-    float normX = (ball.position.x / (float)windowWidth) * 2.0f - 1.0f;
-    float normY = 1.0f - (ball.position.y / (float)windowHeight) * 2.0f;
-    model = glm::translate(model, glm::vec3(normX, normY, 0.0f));
-
-    float scaleFactor = std::min((float)windowWidth, (float)windowHeight);
-    float scaleX = (ball.size.x / scaleFactor) * 2.0f;
-    float scaleY = (ball.size.y / scaleFactor) * 2.0f;
+    model = glm::translate(model, glm::vec3(ball.position.x, ball.position.y, 0.0f));
     model = glm::scale(model, glm::vec3(scaleX, scaleY, 1.0f));
 
-    glUniformMatrix4fv(glGetUniformLocation(sceneShaderProgram, "u_model"), 1, GL_FALSE, glm::value_ptr(model));
+    glm::mat4 projection = CalculateProjection(windowWidth, windowHeight, 0, 0);
+    glm::mat4 mvp = projection * model;
+    glUniformMatrix4fv(glGetUniformLocation(sceneShaderProgram, "u_mvp"), 1, GL_FALSE, glm::value_ptr(mvp));
+
     glUniform1i(glGetUniformLocation(sceneShaderProgram, "ourTexture"), 0);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, ballTexture);
@@ -468,25 +540,22 @@ Render(void)
     glBindVertexArray(0);
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    // ----------------------------
-
-    // Render the FBO texture to the screen
+    // Unbind the FBO
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // Clear the default framebuffer
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
+    // Use the FBO shader program
     glUseProgram(fboShaderProgram);
     glUniform1i(glGetUniformLocation(fboShaderProgram, "screenTexture"), 0);
     glActiveTexture(GL_TEXTURE0);
-    glBindVertexArray(fboVAO);
-
     glBindTexture(GL_TEXTURE_2D, fboTexture);
+    glBindVertexArray(fboVAO);
     glDrawArrays(GL_TRIANGLES, 0, 6);
-
     glBindVertexArray(0);
     glBindTexture(GL_TEXTURE_2D, 0);
-
-    // ----------------------------
 
     // Swap buffers
     SDL_GL_SwapWindow(window);
@@ -505,16 +574,14 @@ int main(int argc, char **argv)
 
     while (isRunning)
     {
-        const float deltaTime = 1.0f / 60.0f;
+        // const float deltaTime = 1.0f / 60.0f;
 
         Input();
-        Update(deltaTime);
+        Update();
         Render();
     }
 
-    // SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
-    // SDL_DestroyTexture(renderTexture);
     SDL_GL_DestroyContext(glContext);
     SDL_Quit();
 

@@ -23,6 +23,7 @@
         "vector": "c",
         "gl.h": "c",
         "stdbool.h": "c",
-        "ios": "cpp"
+        "ios": "cpp",
+        "random": "cpp"
     }
 }
