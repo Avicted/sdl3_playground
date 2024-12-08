@@ -37,8 +37,8 @@ typedef struct Ball // @Note: Actually a rectangle
 
 Ball ball = {
     .position = {0.0f, 0.0f},
-    .velocity = {0.4f, 0.6f},
-    .radius = 64.0f,
+    .velocity = {256.4f, 128.6f},
+    .radius = 128.0f,
 };
 
 bool isRunning = true;
@@ -66,48 +66,6 @@ GLuint sceneShaderProgram;
 GLuint fboShaderProgram;
 
 // -------------------------------------------------------------------------------
-static glm::mat4
-CalculateProjection(int width, int height, int offsetX, int offsetY)
-{
-    static int cachedWidth = 0;
-    static int cachedHeight = 0;
-    static int cachedOffsetX = 0;
-    static int cachedOffsetY = 0;
-    static glm::mat4 cachedProjectionMatrix;
-
-    if (width == cachedWidth && height == cachedHeight && offsetX == cachedOffsetX && offsetY == cachedOffsetY)
-    {
-        return cachedProjectionMatrix;
-    }
-
-    float aspectRatio = static_cast<float>(GAME_WIDTH) / static_cast<float>(GAME_HEIGHT);
-    float currentAspectRatio = (float)width / (float)height;
-
-    float scaleX = 1.0f;
-    float scaleY = 1.0f;
-
-    if (currentAspectRatio > aspectRatio)
-    {
-        scaleX = currentAspectRatio / aspectRatio;
-    }
-    else
-    {
-        scaleY = aspectRatio / currentAspectRatio;
-    }
-
-    cachedProjectionMatrix = glm::ortho(
-        -scaleX * GAME_WIDTH / 2.0f + (offsetX / scaleX), scaleX * GAME_WIDTH / 2.0f + (offsetX / scaleX),
-        -scaleY * GAME_HEIGHT / 2.0f + (offsetY / scaleY), scaleY * GAME_HEIGHT / 2.0f + (offsetY / scaleY),
-        -1.0f, 1.0f);
-
-    cachedWidth = width;
-    cachedHeight = height;
-    cachedOffsetX = offsetX;
-    cachedOffsetY = offsetY;
-
-    return cachedProjectionMatrix;
-}
-
 static void
 ResizeFboTexture(int newWidth, int newHeight)
 {
@@ -138,8 +96,14 @@ void ResizeWindow(int width, int height)
     }
 
     glViewport(viewportX, viewportY, viewportWidth, viewportHeight);
+    // glEnable(GL_SCISSOR_TEST);
+    // glScissor(viewportX, viewportY, viewportWidth, viewportHeight);
 
-    glm::mat4 projection = CalculateProjection(viewportWidth, viewportHeight, viewportX, viewportY);
+    glm::mat4 projection = glm::ortho(
+        -GAME_WIDTH / 2.0f, GAME_WIDTH / 2.0f,
+        -GAME_HEIGHT / 2.0f, GAME_HEIGHT / 2.0f,
+        -1.0f, 1.0f);
+
     glUseProgram(sceneShaderProgram);
     glUniformMatrix4fv(glGetUniformLocation(sceneShaderProgram, "u_mvp"), 1, GL_FALSE, glm::value_ptr(projection));
 
@@ -463,11 +427,10 @@ Input(void)
 }
 
 static void
-UpdateBall(Ball &ball, float left, float right, float top, float bottom)
+UpdateBall(float deltaTime)
 {
-    // Update position
-    ball.position.x += ball.velocity.x;
-    ball.position.y += ball.velocity.y;
+    ball.position.x += ball.velocity.x * deltaTime;
+    ball.position.y += ball.velocity.y * deltaTime;
 
     // Check for collisions with boundaries
     if (ball.position.x - (ball.radius / 2) < left || ball.position.x + (ball.radius / 2) > right)
@@ -482,13 +445,13 @@ UpdateBall(Ball &ball, float left, float right, float top, float bottom)
         ball.position.y = glm::clamp(ball.position.y, bottom + (ball.radius / 2), top - (ball.radius / 2));
     }
 
-    // printf("Ball position: (%f, %f)\n", ball.position.x, ball.position.y);
+    printf("Ball position: (%f, %f)\n", ball.position.x, ball.position.y);
 }
 
 static void
-Update(void)
+Update(float deltaTime)
 {
-    UpdateBall(ball, left, right, top, bottom);
+    UpdateBall(deltaTime);
 }
 
 static void
@@ -502,33 +465,51 @@ Render(void)
 
     // Bind the FBO and clear it
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-    glClearColor(0.1f, 0.0f, 0.2f, 1.0f);
+    glClearColor(0.1f, 0.3f, 0.2f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
     // Use the scene shader program
     glUseProgram(sceneShaderProgram);
     glBindVertexArray(ballVAO);
 
+    glm::mat4 model = glm::mat4(1.0f);
+
     // Ball rendering with aspect ratio correction
+    int actualWidth, actualHeight;
+    SDL_GetWindowSizeInPixels(window, &actualWidth, &actualHeight);
+
     float gameAspectRatio = (float)GAME_WIDTH / (float)GAME_HEIGHT;
-    float currentAspectRatio = (float)windowWidth / (float)windowHeight;
-    float scaleX = ball.radius;
-    float scaleY = ball.radius;
+    float currentAspectRatio = (float)actualWidth / (float)actualHeight;
+
+    int viewportWidth, viewportHeight;
+    int viewportX = 0, viewportY = 0;
 
     if (currentAspectRatio > gameAspectRatio)
     {
-        scaleY *= currentAspectRatio / gameAspectRatio;
+        viewportHeight = actualHeight;
+        viewportWidth = (int)(actualHeight * gameAspectRatio);
+        viewportX = (actualWidth - viewportWidth) / 2;
     }
     else
     {
-        scaleX *= gameAspectRatio / currentAspectRatio;
+        viewportWidth = actualWidth;
+        viewportHeight = (int)(actualWidth / gameAspectRatio);
+        viewportY = (actualHeight - viewportHeight) / 2;
     }
 
-    glm::mat4 model = glm::mat4(1.0f);
     model = glm::translate(model, glm::vec3(ball.position.x, ball.position.y, 0.0f));
-    model = glm::scale(model, glm::vec3(scaleX, scaleY, 1.0f));
+    model = glm::translate(model, glm::vec3(viewportX, -viewportY, 0.0f));
+    model = glm::scale(model, glm::vec3(ball.radius, ball.radius, 1.0f));
 
-    glm::mat4 projection = CalculateProjection(windowWidth, windowHeight, 0, 0);
+    // float gameAspectRatio = static_cast<float>(GAME_WIDTH) / static_cast<float>(GAME_HEIGHT);
+    const float orthoHeight = GAME_HEIGHT / 2.0f;
+    const float orthoWidth = GAME_WIDTH / 2.0f;
+
+    glm::mat4 projection = glm::ortho(
+        -orthoWidth, orthoWidth,
+        -orthoHeight, orthoHeight,
+        -1.0f, 1.0f);
+
     glm::mat4 mvp = projection * model;
     glUniformMatrix4fv(glGetUniformLocation(sceneShaderProgram, "u_mvp"), 1, GL_FALSE, glm::value_ptr(mvp));
 
@@ -557,6 +538,9 @@ Render(void)
     glBindVertexArray(0);
     glBindTexture(GL_TEXTURE_2D, 0);
 
+    // Disable scissor test
+    // glDisable(GL_SCISSOR_TEST);
+
     // Swap buffers
     SDL_GL_SwapWindow(window);
 }
@@ -572,12 +556,15 @@ int main(int argc, char **argv)
         return initSuccess;
     }
 
+    Uint64 lastTime = SDL_GetPerformanceCounter();
     while (isRunning)
     {
-        // const float deltaTime = 1.0f / 60.0f;
+        Uint64 currentTime = SDL_GetPerformanceCounter();
+        const float deltaTime = (currentTime - lastTime) / static_cast<float>(SDL_GetPerformanceFrequency());
+        lastTime = currentTime;
 
         Input();
-        Update();
+        Update(deltaTime);
         Render();
     }
 
