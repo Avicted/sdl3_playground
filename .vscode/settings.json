@@ -27,6 +27,7 @@
         "random": "cpp",
         "system_error": "cpp",
         "thread": "cpp",
-        "chrono": "cpp"
+        "chrono": "cpp",
+        "*.inc": "cpp"
     }
 }
