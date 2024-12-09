@@ -701,13 +701,12 @@ main(int argc, char** argv)
     (void)argc;
     (void)argv;
 
-    Context* context = new Context{
-        .GameName = "SDL2 Playground",
-        .BasePath = SDL_GetBasePath(),
-        .Window = NULL,
-        .Device = NULL,
-        .DeltaTime = 0.0f,
-    };
+    Context* context = (Context*)calloc(1, sizeof(Context));
+    context->GameName = "SDL2 Playground";
+    context->BasePath = SDL_GetBasePath();
+    context->Window = NULL;
+    context->Device = NULL;
+    context->DeltaTime = 0.0f;
 
     int initSuccess = Init(context);
     if (initSuccess > 0)
@@ -730,7 +729,7 @@ main(int argc, char** argv)
     }
 
     Cleanup(context);
-    delete context;
+    free(context);
 
     return 0;
 }
