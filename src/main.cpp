@@ -1,18 +1,19 @@
 #include <SDL3/SDL.h>
-
 #include <glad/gl.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
 
+#include <algorithm>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdbool.h>
-
-#include <algorithm>
-
 #define STB_IMAGE_IMPLEMENTATION
+#define STBI_MALLOC SDL_malloc
+#define STBI_REALLOC SDL_realloc
+#define STBI_FREE SDL_free
+// #define STBI_ONLY_HDR
 #include <stb_image.h>
 
 typedef struct Vec2
@@ -20,7 +21,7 @@ typedef struct Vec2
     float x;
     float y;
 
-    Vec2 &operator+=(const Vec2 &other)
+    Vec2& operator+=(const Vec2& other)
     {
         x += other.x;
         y += other.y;
@@ -36,367 +37,536 @@ typedef struct Ball // @Note: Actually a rectangle
 } Ball;
 
 Ball ball = {
-    .position = {0.0f, 0.0f},
-    .velocity = {256.4f, 128.6f},
+    .position = { 0.0f, 0.0f },
+    .velocity = { 256.4f, 128.6f },
     .radius = 128.0f,
 };
 
 bool isRunning = true;
-SDL_Window *window = NULL;
+SDL_Window* window = NULL;
 bool isFullscreen = false;
+
 const int GAME_WIDTH = 640;
 const int GAME_HEIGHT = 360;
-SDL_GLContext glContext = NULL;
 int windowWidth = GAME_WIDTH;
 int windowHeight = GAME_HEIGHT;
 
-const float left = -GAME_WIDTH / 2;
-const float right = GAME_WIDTH / 2;
-const float top = GAME_HEIGHT / 2;
-const float bottom = -GAME_HEIGHT / 2;
+typedef struct Context
+{
+    const char* ExampleName;
+    const char* BasePath;
+    SDL_Window* Window;
+    SDL_GPUDevice* Device;
+    bool LeftPressed;
+    bool RightPressed;
+    bool DownPressed;
+    bool UpPressed;
+    float DeltaTime;
+} Context;
 
-GLuint fbo, fboTexture;
-GLuint fboVAO, fboVBO;
-GLuint ballVAO, ballVBO;
-GLuint ballTexture;
-glm::mat4 projectionMatrix = glm::ortho(left, right, bottom, top, -1.0f, 1.0f);
+typedef struct PositionTextureVertex
+{
+    float x, y, z;
+    float u, v;
+} PositionTextureVertex;
 
-// Shaders
-GLuint sceneShaderProgram;
-GLuint fboShaderProgram;
+static const char* SamplerNames[] = {
+    "PointClamp", "PointWrap",        "LinearClamp",
+    "LinearWrap", "AnisotropicClamp", "AnisotropicWrap",
+};
 
+static SDL_GPUGraphicsPipeline* Pipeline;
+static SDL_GPUBuffer* VertexBuffer;
+static SDL_GPUBuffer* IndexBuffer;
+static SDL_GPUTexture* Texture;
+static SDL_GPUSampler* Samplers[SDL_arraysize(SamplerNames)];
+
+static int CurrentSamplerIndex;
+
+static const char* BasePath = NULL;
 // -------------------------------------------------------------------------------
 static void
-ResizeFboTexture(int newWidth, int newHeight)
+InitializeAssetLoader()
 {
-    glBindTexture(GL_TEXTURE_2D, fboTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, newWidth, newHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    BasePath = SDL_GetBasePath();
 }
 
-void ResizeWindow(int width, int height)
+static SDL_Surface*
+LoadImage(const char* imageFilename, int desiredChannels)
 {
-    float gameAspectRatio = (float)GAME_WIDTH / (float)GAME_HEIGHT;
-    float currentAspectRatio = (float)width / (float)height;
+    char fullPath[256];
+    SDL_Surface* result;
+    SDL_PixelFormat format;
 
-    int viewportWidth, viewportHeight;
-    int viewportX = 0, viewportY = 0;
+    SDL_snprintf(
+      fullPath, sizeof(fullPath), "%sresources/%s", BasePath, imageFilename);
 
-    if (currentAspectRatio > gameAspectRatio)
+    result = SDL_LoadBMP(fullPath);
+    if (result == NULL)
     {
-        viewportHeight = height;
-        viewportWidth = (int)(height * gameAspectRatio);
-        viewportX = (width - viewportWidth) / 2;
+        SDL_Log("Failed to load BMP: %s", SDL_GetError());
+        return NULL;
+    }
+
+    if (desiredChannels == 4)
+    {
+        format = SDL_PIXELFORMAT_ABGR8888;
     }
     else
     {
-        viewportWidth = width;
-        viewportHeight = (int)(width / gameAspectRatio);
-        viewportY = (height - viewportHeight) / 2;
+        SDL_assert(!"Unexpected desiredChannels");
+        SDL_DestroySurface(result);
+        return NULL;
+    }
+    if (result->format != format)
+    {
+        SDL_Surface* next = SDL_ConvertSurface(result, format);
+        SDL_DestroySurface(result);
+        result = next;
     }
 
-    glViewport(viewportX, viewportY, viewportWidth, viewportHeight);
-    // glEnable(GL_SCISSOR_TEST);
-    // glScissor(viewportX, viewportY, viewportWidth, viewportHeight);
-
-    glm::mat4 projection = glm::ortho(
-        -GAME_WIDTH / 2.0f, GAME_WIDTH / 2.0f,
-        -GAME_HEIGHT / 2.0f, GAME_HEIGHT / 2.0f,
-        -1.0f, 1.0f);
-
-    glUseProgram(sceneShaderProgram);
-    glUniformMatrix4fv(glGetUniformLocation(sceneShaderProgram, "u_mvp"), 1, GL_FALSE, glm::value_ptr(projection));
-
-    ResizeFboTexture(viewportWidth, viewportHeight);
+    return result;
 }
 
-static void
-SetupFboQuad()
+static SDL_GPUShader*
+LoadShader(SDL_GPUDevice* device,
+           const char* shaderFilename,
+           Uint32 samplerCount,
+           Uint32 uniformBufferCount,
+           Uint32 storageBufferCount,
+           Uint32 storageTextureCount)
 {
-    float quadVertices[] = {
-        // positions       // texture coords
-        -1.0f, 1.0f, 0.0f, 0.0f, 1.0f,
-        -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
-        1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
-
-        -1.0f, 1.0f, 0.0f, 0.0f, 1.0f,
-        1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
-        1.0f, 1.0f, 0.0f, 1.0f, 1.0f};
-
-    glGenVertexArrays(1, &fboVAO);
-    glGenBuffers(1, &fboVBO);
-
-    glBindVertexArray(fboVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, fboVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
-
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)0);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
-}
-
-static char *
-ReadShaderSource(const char *filePath)
-{
-    FILE *file = fopen(filePath, "r");
-    if (!file)
+    // Auto-detect the shader stage from the file name for convenience
+    SDL_GPUShaderStage stage;
+    if (SDL_strstr(shaderFilename, ".vert"))
     {
-        fprintf(stderr, "Failed to open shader file: %s\n", filePath);
+        stage = SDL_GPU_SHADERSTAGE_VERTEX;
+    }
+    else if (SDL_strstr(shaderFilename, ".frag"))
+    {
+        stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
+    }
+    else
+    {
+        SDL_Log("Invalid shader stage!");
         return NULL;
     }
 
-    fseek(file, 0, SEEK_END);
-    long length = ftell(file);
-    rewind(file);
+    char fullPath[256];
+    SDL_GPUShaderFormat backendFormats = SDL_GetGPUShaderFormats(device);
+    SDL_GPUShaderFormat format = SDL_GPU_SHADERFORMAT_INVALID;
+    const char* entrypoint;
 
-    char *source = (char *)malloc(length + 1);
-    if (!source)
+    if (backendFormats & SDL_GPU_SHADERFORMAT_SPIRV)
     {
-        fprintf(stderr, "Failed to allocate memory for shader source\n");
-        fclose(file);
+        SDL_snprintf(fullPath,
+                     sizeof(fullPath),
+                     "%sshaders/%s.spv",
+                     BasePath,
+                     shaderFilename);
+        format = SDL_GPU_SHADERFORMAT_SPIRV;
+        entrypoint = "main";
+    }
+    else if (backendFormats & SDL_GPU_SHADERFORMAT_MSL)
+    {
+        SDL_snprintf(fullPath,
+                     sizeof(fullPath),
+                     "%sshaders/%s.msl",
+                     BasePath,
+                     shaderFilename);
+        format = SDL_GPU_SHADERFORMAT_MSL;
+        entrypoint = "main0";
+    }
+    else if (backendFormats & SDL_GPU_SHADERFORMAT_DXIL)
+    {
+        SDL_snprintf(fullPath,
+                     sizeof(fullPath),
+                     "%sshaders/%s.dxil",
+                     BasePath,
+                     shaderFilename);
+        format = SDL_GPU_SHADERFORMAT_DXIL;
+        entrypoint = "main";
+    }
+    else
+    {
+        SDL_Log("%s", "Unrecognized backend shader format!");
         return NULL;
     }
 
-    fread(source, 1, length, file);
-    source[length] = '\0';
-    fclose(file);
-
-    return source;
-}
-
-static GLuint
-CompileShader(const char *source, GLenum shaderType)
-{
-    GLuint shader = glCreateShader(shaderType);
-    glShaderSource(shader, 1, &source, NULL);
-    glCompileShader(shader);
-
-    // Check for compilation errors
-    GLint success;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-    if (!success)
+    size_t codeSize;
+    void* code = SDL_LoadFile(fullPath, &codeSize);
+    if (code == NULL)
     {
-        char infoLog[512];
-        glGetShaderInfoLog(shader, sizeof(infoLog), NULL, infoLog);
-        fprintf(stderr, "Shader compilation failed:\n%s\n", infoLog);
+        SDL_Log("Failed to load shader from disk! %s", fullPath);
+        return NULL;
     }
 
+    SDL_GPUShaderCreateInfo shaderInfo = {
+        .code_size = codeSize,
+        .code = static_cast<const Uint8*>(code),
+        .entrypoint = entrypoint,
+        .format = format,
+        .stage = stage,
+        .num_samplers = samplerCount,
+        .num_storage_textures = storageTextureCount,
+        .num_storage_buffers = storageBufferCount,
+        .num_uniform_buffers = uniformBufferCount,
+        .props = 0,
+    };
+    SDL_GPUShader* shader = SDL_CreateGPUShader(device, &shaderInfo);
+    if (shader == NULL)
+    {
+        SDL_Log("Failed to create shader!");
+        SDL_free(code);
+        return NULL;
+    }
+
+    SDL_free(code);
     return shader;
 }
 
-static GLuint
-LinkProgram(GLuint vertexShader, GLuint fragmentShader)
-{
-    GLuint program = glCreateProgram();
-    glAttachShader(program, vertexShader);
-    glAttachShader(program, fragmentShader);
-    glLinkProgram(program);
-
-    // Check for linking errors
-    GLint success;
-    glGetProgramiv(program, GL_LINK_STATUS, &success);
-    if (!success)
-    {
-        char infoLog[512];
-        glGetProgramInfoLog(program, sizeof(infoLog), NULL, infoLog);
-        fprintf(stderr, "Program linking failed:\n%s\n", infoLog);
-    }
-
-    return program;
-}
-
-static GLuint
-LoadSceneShader()
-{
-    const char *vertexSource = ReadShaderSource("./shaders/scene_vertex_shader.glsl");
-    const char *fragmentSource = ReadShaderSource("./shaders/scene_fragment_shader.glsl");
-
-    if (!vertexSource || !fragmentSource)
-    {
-        fprintf(stderr, "Failed to load scene shaders\n");
-        return 0;
-    }
-
-    float ballVertices[] = {
-        // positions        // texture coords
-        0.5f, 0.5f, 0.0f, 1.0f, 1.0f,
-        0.5f, -0.5f, 0.0f, 1.0f, 0.0f,
-        -0.5f, -0.5f, 0.0f, 0.0f, 0.0f,
-
-        0.5f, 0.5f, 0.0f, 1.0f, 1.0f,
-        -0.5f, -0.5f, 0.0f, 0.0f, 0.0f,
-        -0.5f, 0.5f, 0.0f, 0.0f, 1.0f};
-
-    glGenVertexArrays(1, &ballVAO);
-    glGenBuffers(1, &ballVBO);
-
-    glBindVertexArray(ballVAO);
-
-    glBindBuffer(GL_ARRAY_BUFFER, ballVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(ballVertices), ballVertices, GL_STATIC_DRAW);
-
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)0);
-    glEnableVertexAttribArray(0);
-
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
-
-    GLuint vertexShader = CompileShader(vertexSource, GL_VERTEX_SHADER);
-    GLuint fragmentShader = CompileShader(fragmentSource, GL_FRAGMENT_SHADER);
-
-    GLuint program = LinkProgram(vertexShader, fragmentShader);
-
-    if (!program)
-    {
-        fprintf(stderr, "Failed to link scene shader program\n");
-        fprintf(stderr, "Vertex Shader:\n%s\n", vertexSource);
-        fprintf(stderr, "Fragment Shader:\n%s\n", fragmentSource);
-        return 0;
-    }
-
-    // Cleanup
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
-    free((void *)vertexSource);
-    free((void *)fragmentSource);
-
-    return program;
-}
-
-static GLuint
-LoadFboShader()
-{
-    const char *vertexSource = ReadShaderSource("./shaders/fbo_vertex_shader.glsl");
-    const char *fragmentSource = ReadShaderSource("./shaders/fbo_fragment_shader.glsl");
-
-    if (!vertexSource || !fragmentSource)
-    {
-        fprintf(stderr, "Failed to load FBO shaders\n");
-        return 0;
-    }
-
-    GLuint vertexShader = CompileShader(vertexSource, GL_VERTEX_SHADER);
-    GLuint fragmentShader = CompileShader(fragmentSource, GL_FRAGMENT_SHADER);
-
-    GLuint program = LinkProgram(vertexShader, fragmentShader);
-
-    if (!program)
-    {
-        fprintf(stderr, "Failed to link FBO shader program\n");
-        fprintf(stderr, "Vertex Shader:\n%s\n", vertexSource);
-        fprintf(stderr, "Fragment Shader:\n%s\n", fragmentSource);
-        return 0;
-    }
-
-    // Cleanup
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
-    free((void *)vertexSource);
-    free((void *)fragmentSource);
-
-    return program;
-}
-
 static int
-Init(void)
+CommonInit(Context* context, SDL_WindowFlags windowFlags)
 {
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+    context->Device =
+      SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, true, NULL);
 
-    if (!SDL_Init(SDL_INIT_VIDEO))
+    if (context->Device == NULL)
     {
-        SDL_Log("SDL_Init failed (%s)", SDL_GetError());
-        return 1;
+        SDL_Log("GPUCreateDevice failed: %s", SDL_GetError());
+        return -1;
     }
 
-    SDL_WindowFlags windowFlags = (SDL_WindowFlags)(SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL);
-    window = SDL_CreateWindow("SDL Playground", GAME_WIDTH, GAME_HEIGHT, windowFlags);
-    if (!window)
+    context->Window =
+      SDL_CreateWindow(context->ExampleName, 640, 480, windowFlags);
+    if (context->Window == NULL)
     {
-        SDL_Log("SDL_CreateWindow failed (%s)", SDL_GetError());
-        SDL_Quit();
-        return 1;
+        SDL_Log("CreateWindow failed: %s", SDL_GetError());
+        return -1;
     }
 
-    glContext = SDL_GL_CreateContext(window);
-    if (!gladLoaderLoadGL())
+    if (!SDL_ClaimWindowForGPUDevice(context->Device, context->Window))
     {
-        SDL_Log("Failed to initialize OpenGL context");
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize OpenGL context");
-        return 1;
+        SDL_Log("GPUClaimWindow failed");
+        return -1;
     }
-
-    // Log OpenGL information
-    SDL_Log("Vendor: %s", glGetString(GL_VENDOR));
-    SDL_Log("Renderer: %s", glGetString(GL_RENDERER));
-    SDL_Log("OpenGL Version: %s", glGetString(GL_VERSION));
-    SDL_Log("GLSL Version: %s", glGetString(GL_SHADING_LANGUAGE_VERSION));
-
-    glViewport(0, 0, GAME_WIDTH, GAME_HEIGHT);
-
-    // Create ball texture
-    glGenTextures(1, &ballTexture);
-    glBindTexture(GL_TEXTURE_2D, ballTexture);
-    unsigned char whitePixel[] = {255, 255, 255, 255};
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, whitePixel);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-    // Load resources/uv_test.png
-    int width, height, channels;
-    unsigned char *image = stbi_load("resources/uv_test.png", &width, &height, &channels, 0);
-    if (!image)
-    {
-        SDL_Log("Failed to load image: %s", stbi_failure_reason());
-        return 1;
-    }
-
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image);
-    // glGenerateMipmap(GL_TEXTURE_2D);
-
-    stbi_image_free(image);
-
-    // Create FBO
-    glGenFramebuffers(1, &fbo);
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-
-    // Create texture for the FBO
-    glGenTextures(1, &fboTexture);
-    glBindTexture(GL_TEXTURE_2D, fboTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, GAME_WIDTH, GAME_HEIGHT, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fboTexture, 0);
-
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-    {
-        SDL_Log("Framebuffer is not complete!");
-    }
-
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-    // Load shaders
-    sceneShaderProgram = LoadSceneShader();
-    fboShaderProgram = LoadFboShader();
-
-    // Call SetupFboQuad to initialize the full-screen quad
-    SetupFboQuad();
-
-    ResizeWindow(GAME_WIDTH, GAME_HEIGHT);
 
     return 0;
 }
 
-static void
-Input(void)
+static int
+Init(Context* context)
+{
+    int result = CommonInit(context, SDL_WINDOW_RESIZABLE);
+    if (result < 0)
+    {
+        return result;
+    }
+
+    // Create the shaders
+    SDL_GPUShader* vertexShader =
+      LoadShader(context->Device, "TexturedQuad.vert", 0, 0, 0, 0);
+    if (vertexShader == NULL)
+    {
+        SDL_Log("Failed to create vertex shader!");
+        return -1;
+    }
+
+    SDL_GPUShader* fragmentShader =
+      LoadShader(context->Device, "TexturedQuad.frag", 1, 0, 0, 0);
+    if (fragmentShader == NULL)
+    {
+        SDL_Log("Failed to create fragment shader!");
+        return -1;
+    }
+
+    // Load the image
+    SDL_Surface* imageData = LoadImage("uv_test.bmp", 4);
+    if (imageData == NULL)
+    {
+        SDL_Log("Could not load image data!");
+        return -1;
+    }
+
+    // Create the pipeline
+    SDL_GPUGraphicsPipelineCreateInfo pipelineCreateInfo = {
+        .vertex_shader = vertexShader,
+        .fragment_shader = fragmentShader,
+        .vertex_input_state =
+          (SDL_GPUVertexInputState){
+            .vertex_buffer_descriptions =
+              (SDL_GPUVertexBufferDescription[]){
+                {
+                  .slot = 0,
+                  .pitch = sizeof(PositionTextureVertex),
+                  .input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX,
+                  .instance_step_rate = 0,
+                },
+
+              },
+            .num_vertex_buffers = 1,
+            .vertex_attributes =
+              (SDL_GPUVertexAttribute[]){
+                { .location = 0,
+                  .buffer_slot = 0,
+                  .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
+                  .offset = 0 },
+                { .location = 1,
+                  .buffer_slot = 0,
+                  .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2,
+                  .offset = sizeof(float) * 3 } },
+            .num_vertex_attributes = 2,
+          },
+        .primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,
+        .rasterizer_state =
+          (SDL_GPURasterizerState){
+            .fill_mode = SDL_GPU_FILLMODE_FILL,
+            .cull_mode = SDL_GPU_CULLMODE_NONE,
+            .front_face = SDL_GPU_FRONTFACE_CLOCKWISE,
+          },
+        .multisample_state = (SDL_GPUMultisampleState){
+          .sample_count = SDL_GPUSampleCount::SDL_GPU_SAMPLECOUNT_1,
+          .sample_mask = 0xFFFFFFFF,
+          .enable_mask = false,
+        },
+        .depth_stencil_state = (SDL_GPUDepthStencilState){
+          .compare_op = SDL_GPU_COMPAREOP_ALWAYS,
+          .back_stencil_state = (SDL_GPUStencilOpState){
+            .fail_op = SDL_GPU_STENCILOP_KEEP,
+            .pass_op = SDL_GPU_STENCILOP_KEEP,
+            .depth_fail_op = SDL_GPU_STENCILOP_KEEP,
+            .compare_op = SDL_GPU_COMPAREOP_ALWAYS,
+          },
+          .front_stencil_state = (SDL_GPUStencilOpState){
+            .fail_op = SDL_GPU_STENCILOP_KEEP,
+            .pass_op = SDL_GPU_STENCILOP_KEEP,
+            .depth_fail_op = SDL_GPU_STENCILOP_KEEP,
+            .compare_op = SDL_GPU_COMPAREOP_ALWAYS,
+          },
+          .compare_mask = 0xFF,
+          .write_mask = 0xFF,
+          .enable_depth_test = false,
+          .enable_depth_write = false,
+          .enable_stencil_test = false,
+          .padding1 = 0,
+          .padding2 = 0,
+          .padding3 = 0,
+        },
+        .target_info = {
+          .color_target_descriptions = (SDL_GPUColorTargetDescription[]){ { .format = SDL_GetGPUSwapchainTextureFormat(context->Device, context->Window) } },
+          .num_color_targets = 1,
+        },
+        .props = 0,
+    };
+
+    Pipeline =
+      SDL_CreateGPUGraphicsPipeline(context->Device, &pipelineCreateInfo);
+    if (Pipeline == NULL)
+    {
+        SDL_Log("Failed to create pipeline!");
+        return -1;
+    }
+
+    SDL_ReleaseGPUShader(context->Device, vertexShader);
+    SDL_ReleaseGPUShader(context->Device, fragmentShader);
+
+    // PointClamp
+    SDL_GPUSamplerCreateInfo pointClampSamplerInfo = {
+        .min_filter = SDL_GPU_FILTER_NEAREST,
+        .mag_filter = SDL_GPU_FILTER_NEAREST,
+        .mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST,
+        .address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+        .address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+        .address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+    };
+    Samplers[0] = SDL_CreateGPUSampler(context->Device, &pointClampSamplerInfo);
+
+    // PointWrap
+    SDL_GPUSamplerCreateInfo pointWrapSamplerInfo = {
+        .min_filter = SDL_GPU_FILTER_NEAREST,
+        .mag_filter = SDL_GPU_FILTER_NEAREST,
+        .mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST,
+        .address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_REPEAT,
+        .address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_REPEAT,
+        .address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_REPEAT,
+    };
+    Samplers[1] = SDL_CreateGPUSampler(context->Device, &pointWrapSamplerInfo);
+
+    // LinearClamp
+    SDL_GPUSamplerCreateInfo linearClampSamplerInfo = {
+        .min_filter = SDL_GPU_FILTER_LINEAR,
+        .mag_filter = SDL_GPU_FILTER_LINEAR,
+        .mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_LINEAR,
+        .address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+        .address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+        .address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+    };
+    Samplers[2] =
+      SDL_CreateGPUSampler(context->Device, &linearClampSamplerInfo);
+
+    // LinearWrap
+    SDL_GPUSamplerCreateInfo linearWrapSamplerInfo = {
+        .min_filter = SDL_GPU_FILTER_LINEAR,
+        .mag_filter = SDL_GPU_FILTER_LINEAR,
+        .mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_LINEAR,
+        .address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_REPEAT,
+        .address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_REPEAT,
+        .address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_REPEAT,
+    };
+    Samplers[3] = SDL_CreateGPUSampler(context->Device, &linearWrapSamplerInfo);
+
+    // AnisotropicClamp
+    SDL_GPUSamplerCreateInfo anisotropicClampSamplerInfo = {
+        .min_filter = SDL_GPU_FILTER_LINEAR,
+        .mag_filter = SDL_GPU_FILTER_LINEAR,
+        .mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_LINEAR,
+        .address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+        .address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+        .address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+        .mip_lod_bias = 0.0f,
+        .max_anisotropy = 4,
+        .enable_anisotropy = true,
+    };
+    Samplers[4] =
+      SDL_CreateGPUSampler(context->Device, &anisotropicClampSamplerInfo);
+
+    // AnisotropicWrap
+    SDL_GPUSamplerCreateInfo anisotropicWrapSamplerInfo = {
+        .min_filter = SDL_GPU_FILTER_LINEAR,
+        .mag_filter = SDL_GPU_FILTER_LINEAR,
+        .mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_LINEAR,
+        .address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_REPEAT,
+        .address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_REPEAT,
+        .address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_REPEAT,
+        .mip_lod_bias = 0.0f,
+        .max_anisotropy = 4,
+        .enable_anisotropy = true,
+    };
+    Samplers[5] =
+      SDL_CreateGPUSampler(context->Device, &anisotropicWrapSamplerInfo);
+
+    // Create the GPU resources
+    SDL_GPUBufferCreateInfo vertexBufferCreateInfo = {
+        .usage = SDL_GPU_BUFFERUSAGE_VERTEX,
+        .size = sizeof(PositionTextureVertex) * 4
+    };
+    VertexBuffer =
+      SDL_CreateGPUBuffer(context->Device, &vertexBufferCreateInfo);
+    SDL_SetGPUBufferName(
+      context->Device, VertexBuffer, "Ravioli Vertex Buffer 🥣");
+
+    SDL_GPUBufferCreateInfo indexBufferCreateInfo = {
+        .usage = SDL_GPU_BUFFERUSAGE_INDEX, .size = sizeof(Uint16) * 6
+    };
+    IndexBuffer = SDL_CreateGPUBuffer(context->Device, &indexBufferCreateInfo);
+
+    SDL_GPUTextureCreateInfo textureCreateInfo = {
+        .type = SDL_GPU_TEXTURETYPE_2D,
+        .format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+        .usage = SDL_GPU_TEXTUREUSAGE_SAMPLER,
+        .width = static_cast<Uint32>(imageData->w),
+        .height = static_cast<Uint32>(imageData->h),
+        .layer_count_or_depth = 1,
+        .num_levels = 1,
+    };
+    Texture = SDL_CreateGPUTexture(context->Device, &textureCreateInfo);
+    SDL_SetGPUTextureName(context->Device, Texture, "Ravioli Texture 🖼️");
+
+    // Set up buffer data
+    SDL_GPUTransferBufferCreateInfo bufferTransferBufferCreateInfo = {
+        .usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
+        .size = (sizeof(PositionTextureVertex) * 4) + (sizeof(Uint16) * 6)
+    };
+    SDL_GPUTransferBuffer* bufferTransferBuffer = SDL_CreateGPUTransferBuffer(
+      context->Device, &bufferTransferBufferCreateInfo);
+
+    PositionTextureVertex* transferData = static_cast<PositionTextureVertex*>(
+      SDL_MapGPUTransferBuffer(context->Device, bufferTransferBuffer, false));
+
+    transferData[0] = (PositionTextureVertex){ -1, 1, 0, 0, 0 };
+    transferData[1] = (PositionTextureVertex){ 1, 1, 0, 4, 0 };
+    transferData[2] = (PositionTextureVertex){ 1, -1, 0, 4, 4 };
+    transferData[3] = (PositionTextureVertex){ -1, -1, 0, 0, 4 };
+
+    Uint16* indexData = (Uint16*)&transferData[4];
+    indexData[0] = 0;
+    indexData[1] = 1;
+    indexData[2] = 2;
+    indexData[3] = 0;
+    indexData[4] = 2;
+    indexData[5] = 3;
+
+    SDL_UnmapGPUTransferBuffer(context->Device, bufferTransferBuffer);
+
+    // Set up texture data
+    SDL_GPUTransferBufferCreateInfo textureTransferBufferCreateInfo = {
+        .usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
+        .size = static_cast<Uint32>(imageData->w * imageData->h * 4)
+    };
+    SDL_GPUTransferBuffer* textureTransferBuffer = SDL_CreateGPUTransferBuffer(
+      context->Device, &textureTransferBufferCreateInfo);
+
+    Uint8* textureTransferPtr = static_cast<Uint8*>(
+      SDL_MapGPUTransferBuffer(context->Device, textureTransferBuffer, false));
+
+    SDL_memcpy(
+      textureTransferPtr, imageData->pixels, imageData->w * imageData->h * 4);
+    SDL_UnmapGPUTransferBuffer(context->Device, textureTransferBuffer);
+
+    // Upload the transfer data to the GPU resources
+    SDL_GPUCommandBuffer* uploadCmdBuf =
+      SDL_AcquireGPUCommandBuffer(context->Device);
+    SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(uploadCmdBuf);
+
+    SDL_GPUTransferBufferLocation vertexBufferLocation = {
+        .transfer_buffer = bufferTransferBuffer, .offset = 0
+    };
+    SDL_GPUBufferRegion vertexBufferRegion = {
+        .buffer = VertexBuffer,
+        .offset = 0,
+        .size = sizeof(PositionTextureVertex) * 4
+    };
+    SDL_UploadToGPUBuffer(
+      copyPass, &vertexBufferLocation, &vertexBufferRegion, false);
+
+    SDL_GPUTransferBufferLocation indexBufferLocation = {
+        .transfer_buffer = bufferTransferBuffer,
+        .offset = sizeof(PositionTextureVertex) * 4
+    };
+    SDL_GPUBufferRegion indexBufferRegion = {
+        .buffer = IndexBuffer,
+        .offset = 0,
+        .size = sizeof(Uint16) * 6,
+    };
+    SDL_UploadToGPUBuffer(
+      copyPass, &indexBufferLocation, &indexBufferRegion, false);
+
+    SDL_GPUTextureTransferInfo textureTransferInfo = {
+        .transfer_buffer = textureTransferBuffer,
+        .offset = 0,
+    };
+    SDL_GPUTextureRegion textureRegion = {
+        .texture = Texture,
+        .w = static_cast<Uint32>(imageData->w),
+        .h = static_cast<Uint32>(imageData->h),
+        .d = 1,
+    };
+    SDL_UploadToGPUTexture(
+      copyPass, &textureTransferInfo, &textureRegion, false);
+
+    SDL_EndGPUCopyPass(copyPass);
+    SDL_SubmitGPUCommandBuffer(uploadCmdBuf);
+    SDL_DestroySurface(imageData);
+
+    // Finally, print instructions!
+    SDL_Log("Press Left/Right to switch between sampler states");
+    SDL_Log("Setting sampler state to: %s", SamplerNames[0]);
+
+    return 0;
+}
+
+static int
+Input(Context* context)
 {
     SDL_Event event;
     while (SDL_PollEvent(&event))
@@ -408,11 +578,6 @@ Input(void)
 
         if (event.type == SDL_EVENT_WINDOW_RESIZED)
         {
-            int newWidth, newHeight;
-            SDL_GetWindowSizeInPixels(window, &newWidth, &newHeight);
-
-            // Keep the initial aspect ratio of the canvas
-            ResizeWindow(newWidth, newHeight);
         }
 
         if (event.type == SDL_EVENT_KEY_DOWN)
@@ -420,10 +585,36 @@ Input(void)
             if (event.key.key == SDLK_F11)
             {
                 isFullscreen = !isFullscreen;
-                SDL_SetWindowFullscreen(window, isFullscreen ? SDL_WINDOW_FULLSCREEN : 0);
+            }
+        }
+
+        // User keyboard input
+        if (event.type == SDL_EVENT_KEY_DOWN)
+        {
+            if (event.key.key == SDLK_LEFT)
+            {
+                CurrentSamplerIndex -= 1;
+                if (CurrentSamplerIndex < 0)
+                {
+                    CurrentSamplerIndex = SDL_arraysize(Samplers) - 1;
+                    SDL_Log("Setting sampler state to: %s",
+                            SamplerNames[CurrentSamplerIndex]);
+                }
+            }
+            if (context->RightPressed)
+            {
+                if (event.key.key == SDLK_RIGHT)
+                {
+                    CurrentSamplerIndex =
+                      (CurrentSamplerIndex + 1) % SDL_arraysize(Samplers);
+                    SDL_Log("Setting sampler state to: %s",
+                            SamplerNames[CurrentSamplerIndex]);
+                }
             }
         }
     }
+
+    return 0;
 }
 
 static void
@@ -431,21 +622,6 @@ UpdateBall(float deltaTime)
 {
     ball.position.x += ball.velocity.x * deltaTime;
     ball.position.y += ball.velocity.y * deltaTime;
-
-    // Check for collisions with boundaries
-    if (ball.position.x - (ball.radius / 2) < left || ball.position.x + (ball.radius / 2) > right)
-    {
-        ball.velocity.x *= -1; // Reverse X velocity
-        ball.position.x = glm::clamp(ball.position.x, left + (ball.radius / 2), right - (ball.radius / 2));
-    }
-
-    if (ball.position.y - (ball.radius / 2) < bottom || ball.position.y + (ball.radius / 2) > top)
-    {
-        ball.velocity.y *= -1; // Reverse Y velocity
-        ball.position.y = glm::clamp(ball.position.y, bottom + (ball.radius / 2), top - (ball.radius / 2));
-    }
-
-    printf("Ball position: (%f, %f)\n", ball.position.x, ball.position.y);
 }
 
 static void
@@ -454,103 +630,88 @@ Update(float deltaTime)
     UpdateBall(deltaTime);
 }
 
-static void
-Render(void)
+static int
+Render(Context* context)
 {
-    GLenum err;
-    while ((err = glGetError()) != GL_NO_ERROR)
+    SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(context->Device);
+    if (cmdbuf == NULL)
     {
-        printf("OpenGL Error: %d\n", err);
+        SDL_Log("AcquireGPUCommandBuffer failed: %s", SDL_GetError());
+        return -1;
     }
 
-    // Bind the FBO and clear it
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-    glClearColor(0.1f, 0.3f, 0.2f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    // Use the scene shader program
-    glUseProgram(sceneShaderProgram);
-    glBindVertexArray(ballVAO);
-
-    glm::mat4 model = glm::mat4(1.0f);
-
-    // Ball rendering with aspect ratio correction
-    int actualWidth, actualHeight;
-    SDL_GetWindowSizeInPixels(window, &actualWidth, &actualHeight);
-
-    float gameAspectRatio = (float)GAME_WIDTH / (float)GAME_HEIGHT;
-    float currentAspectRatio = (float)actualWidth / (float)actualHeight;
-
-    int viewportWidth, viewportHeight;
-    int viewportX = 0, viewportY = 0;
-
-    if (currentAspectRatio > gameAspectRatio)
+    SDL_GPUTexture* swapchainTexture;
+    if (!SDL_AcquireGPUSwapchainTexture(
+          cmdbuf, context->Window, &swapchainTexture, NULL, NULL))
     {
-        viewportHeight = actualHeight;
-        viewportWidth = (int)(actualHeight * gameAspectRatio);
-        viewportX = (actualWidth - viewportWidth) / 2;
-    }
-    else
-    {
-        viewportWidth = actualWidth;
-        viewportHeight = (int)(actualWidth / gameAspectRatio);
-        viewportY = (actualHeight - viewportHeight) / 2;
+        SDL_Log("AcquireGPUSwapchainTexture failed: %s", SDL_GetError());
+        return -1;
     }
 
-    model = glm::translate(model, glm::vec3(ball.position.x, ball.position.y, 0.0f));
-    model = glm::translate(model, glm::vec3(viewportX, -viewportY, 0.0f));
-    model = glm::scale(model, glm::vec3(ball.radius, ball.radius, 1.0f));
+    if (swapchainTexture != NULL)
+    {
+        SDL_GPUColorTargetInfo colorTargetInfo = { 0 };
+        colorTargetInfo.texture = swapchainTexture;
+        colorTargetInfo.clear_color = (SDL_FColor){ 0.0f, 0.0f, 0.0f, 1.0f };
+        colorTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR;
+        colorTargetInfo.store_op = SDL_GPU_STOREOP_STORE;
 
-    // float gameAspectRatio = static_cast<float>(GAME_WIDTH) / static_cast<float>(GAME_HEIGHT);
-    const float orthoHeight = GAME_HEIGHT / 2.0f;
-    const float orthoWidth = GAME_WIDTH / 2.0f;
+        SDL_GPURenderPass* renderPass =
+          SDL_BeginGPURenderPass(cmdbuf, &colorTargetInfo, 1, NULL);
 
-    glm::mat4 projection = glm::ortho(
-        -orthoWidth, orthoWidth,
-        -orthoHeight, orthoHeight,
-        -1.0f, 1.0f);
+        SDL_BindGPUGraphicsPipeline(renderPass, Pipeline);
 
-    glm::mat4 mvp = projection * model;
-    glUniformMatrix4fv(glGetUniformLocation(sceneShaderProgram, "u_mvp"), 1, GL_FALSE, glm::value_ptr(mvp));
+        SDL_GPUBufferBinding vertexBufferBinding = { .buffer = VertexBuffer,
+                                                     .offset = 0 };
+        SDL_BindGPUVertexBuffers(renderPass, 0, &vertexBufferBinding, 1);
 
-    glUniform1i(glGetUniformLocation(sceneShaderProgram, "ourTexture"), 0);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, ballTexture);
-    glDrawArrays(GL_TRIANGLES, 0, 6);
+        SDL_GPUBufferBinding indexBufferBinding = { .buffer = IndexBuffer,
+                                                    .offset = 0 };
+        SDL_BindGPUIndexBuffer(
+          renderPass, &indexBufferBinding, SDL_GPU_INDEXELEMENTSIZE_16BIT);
 
-    glBindVertexArray(0);
-    glBindTexture(GL_TEXTURE_2D, 0);
+        SDL_GPUTextureSamplerBinding textureSamplerBinding = {
+            .texture = Texture, .sampler = Samplers[CurrentSamplerIndex]
+        };
+        SDL_BindGPUFragmentSamplers(renderPass, 0, &textureSamplerBinding, 1);
 
-    // Unbind the FBO
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        SDL_DrawGPUIndexedPrimitives(renderPass, 6, 1, 0, 0, 0);
 
-    // Clear the default framebuffer
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
+        SDL_EndGPURenderPass(renderPass);
+    }
 
-    // Use the FBO shader program
-    glUseProgram(fboShaderProgram);
-    glUniform1i(glGetUniformLocation(fboShaderProgram, "screenTexture"), 0);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, fboTexture);
-    glBindVertexArray(fboVAO);
-    glDrawArrays(GL_TRIANGLES, 0, 6);
-    glBindVertexArray(0);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    SDL_SubmitGPUCommandBuffer(cmdbuf);
 
-    // Disable scissor test
-    // glDisable(GL_SCISSOR_TEST);
-
-    // Swap buffers
-    SDL_GL_SwapWindow(window);
+    return 0;
 }
 
-int main(int argc, char **argv)
+int
+main(int argc, char** argv)
 {
     (void)argc;
     (void)argv;
 
-    int initSuccess = Init();
+    Context* context = new Context{
+        .ExampleName = "SDL2 Playground",
+        .BasePath = SDL_GetBasePath(),
+        .Window = NULL,
+        .Device = NULL,
+        .LeftPressed = false,
+        .RightPressed = false,
+        .DownPressed = false,
+        .UpPressed = false,
+        .DeltaTime = 0.0f,
+    };
+
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))
+    {
+        SDL_Log("Failed to initialize SDL: %s", SDL_GetError());
+        return 1;
+    }
+
+    InitializeAssetLoader();
+
+    int initSuccess = Init(context);
     if (initSuccess > 0)
     {
         return initSuccess;
@@ -560,17 +721,33 @@ int main(int argc, char **argv)
     while (isRunning)
     {
         Uint64 currentTime = SDL_GetPerformanceCounter();
-        const float deltaTime = (currentTime - lastTime) / static_cast<float>(SDL_GetPerformanceFrequency());
+        const float deltaTime =
+          (currentTime - lastTime) /
+          static_cast<float>(SDL_GetPerformanceFrequency());
         lastTime = currentTime;
 
-        Input();
+        Input(context);
         Update(deltaTime);
-        Render();
+        Render(context);
     }
 
-    SDL_DestroyWindow(window);
-    SDL_GL_DestroyContext(glContext);
-    SDL_Quit();
+    SDL_ReleaseGPUGraphicsPipeline(context->Device, Pipeline);
+    SDL_ReleaseGPUBuffer(context->Device, VertexBuffer);
+    SDL_ReleaseGPUBuffer(context->Device, IndexBuffer);
+    SDL_ReleaseGPUTexture(context->Device, Texture);
+
+    for (long unsigned int i = 0; i < SDL_arraysize(Samplers); i += 1)
+    {
+        SDL_ReleaseGPUSampler(context->Device, Samplers[i]);
+    }
+
+    CurrentSamplerIndex = 0;
+
+    SDL_ReleaseWindowFromGPUDevice(context->Device, context->Window);
+    SDL_DestroyWindow(context->Window);
+    SDL_DestroyGPUDevice(context->Device);
+
+    delete context;
 
     return 0;
 }

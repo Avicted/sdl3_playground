@@ -24,6 +24,8 @@
         "gl.h": "c",
         "stdbool.h": "c",
         "ios": "cpp",
-        "random": "cpp"
+        "random": "cpp",
+        "system_error": "cpp",
+        "thread": "cpp"
     }
 }

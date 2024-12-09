@@ -2,7 +2,7 @@ CC = gcc
 CXX = g++
 
 CFLAGS = -Wall -Wextra -Werror -O0 -std=c99 -ggdb
-CXXFLAGS = -Wall -Wextra -Werror -O0 -std=c++11 -ggdb
+CXXFLAGS = -Wall -Wextra -Werror -O0 -std=c++17 -ggdb -Wno-error=missing-field-initializers -Wno-missing-field-initializers
 
 INCLUDES = -I./submodules/SDL/include -I./include -I/include/glad -I./submodules/glm
 
