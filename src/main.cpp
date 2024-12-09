@@ -46,10 +46,6 @@ typedef struct Context
     const char* BasePath;
     SDL_Window* Window;
     SDL_GPUDevice* Device;
-    bool LeftPressed;
-    bool RightPressed;
-    bool DownPressed;
-    bool UpPressed;
     float DeltaTime;
 } Context;
 
@@ -710,10 +706,6 @@ main(int argc, char** argv)
         .BasePath = SDL_GetBasePath(),
         .Window = NULL,
         .Device = NULL,
-        .LeftPressed = false,
-        .RightPressed = false,
-        .DownPressed = false,
-        .UpPressed = false,
         .DeltaTime = 0.0f,
     };
 
