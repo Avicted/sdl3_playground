@@ -10,7 +10,7 @@ make run
 ```
 
 ## Features:
-- OpenGL rendering
+- Vulkan rendering
 - Work in progress: Variable resolution with preserved aspect ratio with black bars
 - Game loop:
     - Input
