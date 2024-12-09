@@ -42,7 +42,7 @@ int windowHeight = GAME_HEIGHT;
 
 typedef struct Context
 {
-    const char* ExampleName;
+    const char* GameName;
     const char* BasePath;
     SDL_Window* Window;
     SDL_GPUDevice* Device;
@@ -217,7 +217,7 @@ CommonInit(Context* context, SDL_WindowFlags windowFlags)
         return -1;
     }
 
-    context->Window = SDL_CreateWindow(context->ExampleName, GAME_WIDTH, GAME_HEIGHT, windowFlags);
+    context->Window = SDL_CreateWindow(context->GameName, GAME_WIDTH, GAME_HEIGHT, windowFlags);
     if (context->Window == NULL)
     {
         SDL_Log("CreateWindow failed: %s", SDL_GetError());
@@ -706,7 +706,7 @@ main(int argc, char** argv)
     (void)argv;
 
     Context* context = new Context{
-        .ExampleName = "SDL2 Playground",
+        .GameName = "SDL2 Playground",
         .BasePath = SDL_GetBasePath(),
         .Window = NULL,
         .Device = NULL,
