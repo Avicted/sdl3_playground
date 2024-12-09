@@ -453,7 +453,7 @@ Init(Context* context)
     VertexBuffer =
       SDL_CreateGPUBuffer(context->Device, &vertexBufferCreateInfo);
     SDL_SetGPUBufferName(
-      context->Device, VertexBuffer, "Ravioli Vertex Buffer 🥣");
+      context->Device, VertexBuffer, "TestImage Vertex Buffer 🥣");
 
     SDL_GPUBufferCreateInfo indexBufferCreateInfo = {
         .usage = SDL_GPU_BUFFERUSAGE_INDEX, .size = sizeof(Uint16) * 6
@@ -470,7 +470,7 @@ Init(Context* context)
         .num_levels = 1,
     };
     Texture = SDL_CreateGPUTexture(context->Device, &textureCreateInfo);
-    SDL_SetGPUTextureName(context->Device, Texture, "Ravioli Texture 🖼️");
+    SDL_SetGPUTextureName(context->Device, Texture, "TestImage Texture 🖼️");
 
     // Set up buffer data
     SDL_GPUTransferBufferCreateInfo bufferTransferBufferCreateInfo = {
