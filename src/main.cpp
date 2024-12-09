@@ -81,7 +81,7 @@ static SDL_GPUBuffer* IndexBuffer;
 static SDL_GPUTexture* Texture;
 static SDL_GPUSampler* Samplers[SDL_arraysize(SamplerNames)];
 
-static int CurrentSamplerIndex;
+static int CurrentSamplerIndex = 1;
 
 static const char* BasePath = NULL;
 // -------------------------------------------------------------------------------

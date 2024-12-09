@@ -27,3 +27,7 @@ make run
 
 ## Credits: 
 This software is based on code originally written by Caleb Cornett and licensed under the [zlib License] license. 
+
+
+## Screenshot:
+![screenshot](resources/screenshot.png)
