@@ -1,9 +1,9 @@
 # Basic SDL3 boilerplate
 
 ## Pre-requisites:
-- SDL_shadercross
-    - SPIRV-Cross
-    - DirectXShaderCompiler
+- [SDL_shadercross](https://github.com/libsdl-org/SDL_shadercross)
+    - [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross)
+    - [DirectXShaderCompiler](https://github.com/microsoft/DirectXShaderCompiler)
 
 
 ## Build
