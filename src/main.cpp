@@ -1,5 +1,5 @@
 #include <SDL3/SDL.h>
-#include <glad/gl.h>
+
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
