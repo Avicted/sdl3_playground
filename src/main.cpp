@@ -161,7 +161,7 @@ LoadShader(SDL_GPUDevice* device,
     {
         SDL_snprintf(fullPath,
                      sizeof(fullPath),
-                     "%sshaders/%s.spv",
+                     "%sshaders/compiled/SPIRV/%s.spv",
                      BasePath,
                      shaderFilename);
         format = SDL_GPU_SHADERFORMAT_SPIRV;
@@ -171,7 +171,7 @@ LoadShader(SDL_GPUDevice* device,
     {
         SDL_snprintf(fullPath,
                      sizeof(fullPath),
-                     "%sshaders/%s.msl",
+                     "%sshaders/compiled/MSL/%s.msl",
                      BasePath,
                      shaderFilename);
         format = SDL_GPU_SHADERFORMAT_MSL;
@@ -181,7 +181,7 @@ LoadShader(SDL_GPUDevice* device,
     {
         SDL_snprintf(fullPath,
                      sizeof(fullPath),
-                     "%sshaders/%s.dxil",
+                     "%sshaders/compiled/DXIL/%s.dxil",
                      BasePath,
                      shaderFilename);
         format = SDL_GPU_SHADERFORMAT_DXIL;
@@ -237,8 +237,8 @@ CommonInit(Context* context, SDL_WindowFlags windowFlags)
         return -1;
     }
 
-    context->Window =
-      SDL_CreateWindow(context->ExampleName, 640, 480, windowFlags);
+    context->Window = SDL_CreateWindow(
+      context->ExampleName, GAME_WIDTH, GAME_HEIGHT, windowFlags);
     if (context->Window == NULL)
     {
         SDL_Log("CreateWindow failed: %s", SDL_GetError());

@@ -13,14 +13,17 @@ SRC = src/main.cpp
 EXE = build/SDL_playground
 
 # Build everything
-all: SDL glm $(EXE)
+all: SDL glm compile_shaders $(EXE)
 
 # Build the main executable
 $(EXE): $(SRC)
+	$(shell mkdir -p build)
 	cp -r shaders build/
 	cp -r resources build/
-	$(shell mkdir -p build)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $(EXE) $(SRC) $(LIBS)
+
+compile_shaders: 
+	cd ./shaders/source && ./compile.sh && cd ../../
 
 SDL:
 	cd submodules/SDL && \

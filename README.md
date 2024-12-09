@@ -1,5 +1,12 @@
 # Basic SDL3 boilerplate
 
+## Pre-requisites:
+- SDL_shadercross
+    - SPIRV-Cross
+    - DirectXShaderCompiler
+
+
+## Build
 ```bash
 git clone --recurse-submodules git@github.com:Avicted/sdl3_playground.git
 
