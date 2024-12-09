@@ -566,7 +566,7 @@ Init(Context* context)
 }
 
 static int
-Input(Context* context)
+Input(void)
 {
     SDL_Event event;
     while (SDL_PollEvent(&event))
@@ -597,19 +597,16 @@ Input(Context* context)
                 if (CurrentSamplerIndex < 0)
                 {
                     CurrentSamplerIndex = SDL_arraysize(Samplers) - 1;
-                    SDL_Log("Setting sampler state to: %s",
-                            SamplerNames[CurrentSamplerIndex]);
                 }
+                SDL_Log("Setting sampler state to: %s",
+                        SamplerNames[CurrentSamplerIndex]);
             }
-            if (context->RightPressed)
+            if (event.key.key == SDLK_RIGHT)
             {
-                if (event.key.key == SDLK_RIGHT)
-                {
-                    CurrentSamplerIndex =
-                      (CurrentSamplerIndex + 1) % SDL_arraysize(Samplers);
-                    SDL_Log("Setting sampler state to: %s",
-                            SamplerNames[CurrentSamplerIndex]);
-                }
+                CurrentSamplerIndex =
+                  (CurrentSamplerIndex + 1) % SDL_arraysize(Samplers);
+                SDL_Log("Setting sampler state to: %s",
+                        SamplerNames[CurrentSamplerIndex]);
             }
         }
     }
@@ -726,7 +723,7 @@ main(int argc, char** argv)
           static_cast<float>(SDL_GetPerformanceFrequency());
         lastTime = currentTime;
 
-        Input(context);
+        Input();
         Update(deltaTime);
         Render(context);
     }
