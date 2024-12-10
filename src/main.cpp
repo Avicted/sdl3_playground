@@ -21,31 +21,25 @@
 #include "context.hpp"
 #include "includes.hpp"
 
-bool isRunning = true;
-SDL_Window* window = NULL;
-bool isFullscreen = false;
-
-int windowWidth = GAME_WIDTH;
-int windowHeight = GAME_HEIGHT;
-int scaleX, scaleY, scale, offsetX, offsetY;
-
-global_variable const char* BasePath = NULL;
 // -------------------------------------------------------------------------------
 internal void
-InitializeAssetLoader()
+InitializeAssetLoader(Context* context)
 {
-    BasePath = SDL_GetBasePath();
+    context->BasePath = SDL_GetBasePath();
 }
 
 internal SDL_Surface*
-LoadImage(const char* imageFilename, int desiredChannels)
+LoadImage(Context* context, const char* imageFilename, int desiredChannels)
 {
     char fullPath[256];
     SDL_Surface* result;
     SDL_PixelFormat format;
 
-    SDL_snprintf(
-      fullPath, sizeof(fullPath), "%sresources/%s", BasePath, imageFilename);
+    SDL_snprintf(fullPath,
+                 sizeof(fullPath),
+                 "%sresources/%s",
+                 context->BasePath,
+                 imageFilename);
 
     result = SDL_LoadBMP(fullPath);
     if (result == NULL)
@@ -74,6 +68,23 @@ LoadImage(const char* imageFilename, int desiredChannels)
     return result;
 }
 
+internal void
+ResizeWindow(Context* context, int w, int h)
+{
+    // -- Calculate scale to fit the 16:9 resolution
+    context->scaleX = w / GAME_WIDTH;
+    context->scaleY = h / GAME_HEIGHT;
+    context->scale = std::min(context->scaleX, context->scaleY);
+
+    // -- Calculate offsets to center the game content in the window
+    context->offsetX = (w - GAME_WIDTH * context->scale) / 2;
+    context->offsetY = (h - GAME_HEIGHT * context->scale) / 2;
+
+    printf("Scale: %d x %d\n", context->scaleX, context->scaleY);
+    printf("Offset: %d x %d\n", context->offsetX, context->offsetY);
+    printf("Window size: %d x %d\n", w, h);
+}
+
 internal int
 Init(Context* context)
 {
@@ -83,12 +94,21 @@ Init(Context* context)
         return result;
     }
 
-    InitializeAssetLoader();
+    InitializeAssetLoader(context);
 
     RendererInitShaders(context);
 
+    // -- Calculate scale and offsets for initial window size
+    int w, h;
+    SDL_GetWindowSize(context->Window, &w, &h);
+    ResizeWindow(context, GAME_WIDTH, GAME_HEIGHT);
+
+    printf("Window size: %d x %d\n", w, h);
+    printf("Scale: %d x %d\n", context->scaleX, context->scaleY);
+    printf("Offset: %d x %d\n", context->offsetX, context->offsetY);
+
     // Load the image
-    context->Renderer.imageData = LoadImage("uv_test.bmp", 4);
+    context->Renderer.imageData = LoadImage(context, "uv_test.bmp", 4);
     if (context->Renderer.imageData == NULL)
     {
         SDL_Log("Could not load image data!");
@@ -100,32 +120,7 @@ Init(Context* context)
     RendererCreateSamplers(context);
     RendererCreateTexture(context);
 
-    // -- Calculate scale and offsets for initial window size
-    int w, h;
-    SDL_GetWindowSize(window, &w, &h);
-
-    scaleX = GAME_WIDTH;
-    scaleY = GAME_HEIGHT;
-    scale = 1;
-    offsetX = 0;
-    offsetY = 0;
-
     return 0;
-}
-
-internal void
-ResizeWindow(int w, int h)
-{
-    // -- Calculate scale to fit the 16:9 resolution
-    scaleX = w / GAME_WIDTH;
-    scaleY = h / GAME_HEIGHT;
-    scale = std::min(scaleX, scaleY);
-
-    // -- Calculate offsets to center the game content in the window
-    offsetX = (w - GAME_WIDTH * scale) / 2;
-    offsetY = (h - GAME_HEIGHT * scale) / 2;
-
-    // @Note(Victor): Anything else?
 }
 
 internal int
@@ -136,21 +131,21 @@ Input(Context* context)
     {
         if (event.type == SDL_EVENT_QUIT)
         {
-            isRunning = false;
+            context->isRunning = false;
         }
 
         if (event.type == SDL_EVENT_WINDOW_RESIZED)
         {
-            windowWidth = event.window.data1;
-            windowHeight = event.window.data2;
-            ResizeWindow(windowWidth, windowHeight);
+            context->windowWidth = event.window.data1;
+            context->windowHeight = event.window.data2;
+            ResizeWindow(context, context->windowWidth, context->windowHeight);
         }
 
         if (event.type == SDL_EVENT_KEY_DOWN)
         {
             if (event.key.key == SDLK_F11)
             {
-                isFullscreen = !isFullscreen;
+                context->isFullscreen = !context->isFullscreen;
             }
         }
 
@@ -189,7 +184,7 @@ UpdateBall(float deltaTime, Context* context)
     context->ball.position.x += context->ball.velocity.x * deltaTime;
     context->ball.position.y += context->ball.velocity.y * deltaTime;
 
-    // Check for collisions with the left and right edges of the window
+    // Check for collisions with the left and right edges using game dimensions
     if (context->ball.position.x - context->ball.radius <
         0.0f) // Ball hits left edge
     {
@@ -199,16 +194,16 @@ UpdateBall(float deltaTime, Context* context)
           -context->ball.velocity.x; // Reverse the horizontal velocity
     }
     else if (context->ball.position.x + context->ball.radius >
-             windowWidth) // Ball hits right edge
+             GAME_WIDTH) // Ball hits right edge
     {
         context->ball.position.x =
-          windowWidth -
+          GAME_WIDTH -
           context->ball.radius; // Prevent the ball from going out of bounds
         context->ball.velocity.x =
           -context->ball.velocity.x; // Reverse the horizontal velocity
     }
 
-    // Check for collisions with the top and bottom edges of the window
+    // Check for collisions with the top and bottom edges using game dimensions
     if (context->ball.position.y - context->ball.radius <
         0.0f) // Ball hits top edge
     {
@@ -218,10 +213,10 @@ UpdateBall(float deltaTime, Context* context)
           -context->ball.velocity.y; // Reverse the vertical velocity
     }
     else if (context->ball.position.y + context->ball.radius >
-             windowHeight) // Ball hits bottom edge
+             GAME_HEIGHT) // Ball hits bottom edge
     {
         context->ball.position.y =
-          windowHeight -
+          GAME_HEIGHT -
           context->ball.radius; // Prevent the ball from going out of bounds
         context->ball.velocity.y =
           -context->ball.velocity.y; // Reverse the vertical velocity
@@ -247,6 +242,8 @@ Cleanup(Context* context)
     SDL_ReleaseGPUBuffer(context->Device, context->Renderer.VertexBuffer);
     SDL_ReleaseGPUBuffer(context->Device, context->Renderer.IndexBuffer);
     SDL_ReleaseGPUTexture(context->Device, context->Renderer.Texture);
+    SDL_ReleaseGPUTransferBuffer(context->Device,
+                                 context->Renderer.textureTransferBuffer);
 
     for (long unsigned int i = 0; i < SDL_arraysize(context->Renderer.Samplers);
          i += 1)
@@ -259,6 +256,8 @@ Cleanup(Context* context)
     SDL_ReleaseWindowFromGPUDevice(context->Device, context->Window);
     SDL_DestroyWindow(context->Window);
     SDL_DestroyGPUDevice(context->Device);
+
+    free(context);
 }
 
 int
@@ -274,8 +273,12 @@ main(int argc, char** argv)
     context->Device = NULL;
     context->DeltaTime = 0.0f;
     context->ball.position = glm::vec2(320.0f, 180.0f);
-    context->ball.velocity = glm::vec2(100.0f, 100.0f);
+    context->ball.velocity = glm::vec2(400.0f, 400.0f);
     context->ball.radius = 32.0f;
+    context->isRunning = true;
+
+    context->windowWidth = GAME_WIDTH;
+    context->windowHeight = GAME_HEIGHT;
 
     int initSuccess = Init(context);
     if (initSuccess > 0)
@@ -286,7 +289,7 @@ main(int argc, char** argv)
     Uint64 lastTime = SDL_GetPerformanceCounter();
 
     // Game loop
-    while (isRunning)
+    while (context->isRunning)
     {
         Uint64 currentTime = SDL_GetPerformanceCounter();
         const float deltaTime =
@@ -300,7 +303,6 @@ main(int argc, char** argv)
     }
 
     Cleanup(context);
-    free(context);
 
     return 0;
 }

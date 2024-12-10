@@ -11,11 +11,6 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/vec2.hpp>
 
-// #define STBI_MALLOC SDL_malloc
-// #define STBI_REALLOC SDL_realloc
-// #define STBI_FREE SDL_free
-// #include <stb_image.h>
-
 // Our code
 #include "context.hpp"
 #include "includes.hpp"
@@ -268,11 +263,11 @@ RendererCreateTexture(Context* context)
         .size = sizeof(PositionTextureVertex) * 4
     };
 
-    // context->Renderer.uploadCmdBuf =
-    //   SDL_AcquireGPUCommandBuffer(context->Device);
-    //
-    // context->Renderer.copyPass =
-    //   SDL_BeginGPUCopyPass(context->Renderer.uploadCmdBuf);
+    context->Renderer.uploadCmdBuf =
+      SDL_AcquireGPUCommandBuffer(context->Device);
+
+    context->Renderer.copyPass =
+      SDL_BeginGPUCopyPass(context->Renderer.uploadCmdBuf);
 
     context->Renderer.VertexBuffer =
       SDL_CreateGPUBuffer(context->Device, &vertexBufferCreateInfo);
@@ -298,32 +293,44 @@ RendererCreateTexture(Context* context)
     context->Renderer.Texture =
       SDL_CreateGPUTexture(context->Device, &textureCreateInfo);
 
+    Assert((unsigned int)context->Renderer.imageData->w <=
+             textureCreateInfo.width &&
+           "Image width exceeds texture dimensions!");
+    Assert((unsigned int)context->Renderer.imageData->h <=
+             textureCreateInfo.height &&
+           "Image height exceeds texture dimensions!");
+
     SDL_SetGPUTextureName(
       context->Device, context->Renderer.Texture, "TestImage Texture");
 
     SDL_GPUTransferBuffer* transferBuffer =
       RendererCreateTransferBuffers(context);
 
-    SDL_GPUCommandBuffer* uploadCmdBuf =
+    context->Renderer.uploadCmdBuf =
       SDL_AcquireGPUCommandBuffer(context->Device);
-    SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(uploadCmdBuf);
 
-    if (copyPass == NULL)
+    context->Renderer.copyPass =
+      SDL_BeginGPUCopyPass(context->Renderer.uploadCmdBuf);
+
+    if (context->Renderer.copyPass == NULL)
     {
         SDL_Log("Failed to begin GPU copy pass: %s", SDL_GetError());
         return -1;
     }
 
-    SDL_GPUTransferBufferLocation vertexBufferLocation = { .transfer_buffer =
-                                                             transferBuffer,
-                                                           .offset = 0 };
+    SDL_GPUTransferBufferLocation vertexBufferLocation = {
+        .transfer_buffer = transferBuffer,
+        .offset = 0,
+    };
     SDL_GPUBufferRegion vertexBufferRegion = {
         .buffer = context->Renderer.VertexBuffer,
         .offset = 0,
         .size = sizeof(PositionTextureVertex) * 4
     };
-    SDL_UploadToGPUBuffer(
-      copyPass, &vertexBufferLocation, &vertexBufferRegion, false);
+    SDL_UploadToGPUBuffer(context->Renderer.copyPass,
+                          &vertexBufferLocation,
+                          &vertexBufferRegion,
+                          false);
 
     SDL_GPUTransferBufferLocation indexBufferLocation = {
         .transfer_buffer = transferBuffer,
@@ -334,8 +341,10 @@ RendererCreateTexture(Context* context)
         .offset = 0,
         .size = sizeof(Uint16) * 6,
     };
-    SDL_UploadToGPUBuffer(
-      copyPass, &indexBufferLocation, &indexBufferRegion, false);
+    SDL_UploadToGPUBuffer(context->Renderer.copyPass,
+                          &indexBufferLocation,
+                          &indexBufferRegion,
+                          false);
 
     SDL_GPUTextureTransferInfo textureTransferInfo = {
         .transfer_buffer = transferBuffer,
@@ -348,10 +357,10 @@ RendererCreateTexture(Context* context)
         .d = 1,
     };
     SDL_UploadToGPUTexture(
-      copyPass, &textureTransferInfo, &textureRegion, false);
+      context->Renderer.copyPass, &textureTransferInfo, &textureRegion, false);
 
-    SDL_EndGPUCopyPass(copyPass);
-    SDL_SubmitGPUCommandBuffer(uploadCmdBuf);
+    SDL_EndGPUCopyPass(context->Renderer.copyPass);
+    SDL_SubmitGPUCommandBuffer(context->Renderer.uploadCmdBuf);
     SDL_DestroySurface(context->Renderer.imageData);
 
     // Finally, print instructions!

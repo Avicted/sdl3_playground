@@ -19,6 +19,13 @@ typedef struct Context
     SDL_GPUDevice* Device;
     float DeltaTime;
 
+    bool isRunning = true;
+    bool isFullscreen = false;
+
+    int windowWidth = 640;
+    int windowHeight = 360;
+    int scaleX, scaleY, scale, offsetX, offsetY;
+
     GameRenderer Renderer;
 
     // Game data
