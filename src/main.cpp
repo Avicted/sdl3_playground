@@ -21,19 +21,6 @@
 #include "context.hpp"
 #include "includes.hpp"
 
-typedef struct Ball // @Note: Actually a rectangle
-{
-    glm::vec2 position;
-    glm::vec2 velocity;
-    float radius;
-} Ball;
-
-Ball ball = {
-    .position = { 0.0f, 0.0f },
-    .velocity = { 256.4f, 128.6f },
-    .radius = 64.0f,
-};
-
 bool isRunning = true;
 SDL_Window* window = NULL;
 bool isFullscreen = false;
@@ -196,175 +183,61 @@ Input(Context* context)
 }
 
 internal void
-UpdateBall(float deltaTime)
+UpdateBall(float deltaTime, Context* context)
 {
     // Update the ball's position
-    ball.position.x += ball.velocity.x * deltaTime;
-    ball.position.y += ball.velocity.y * deltaTime;
+    context->ball.position.x += context->ball.velocity.x * deltaTime;
+    context->ball.position.y += context->ball.velocity.y * deltaTime;
 
     // Check for collisions with the left and right edges of the window
-    if (ball.position.x - ball.radius < 0.0f) // Ball hits left edge
+    if (context->ball.position.x - context->ball.radius <
+        0.0f) // Ball hits left edge
     {
-        ball.position.x =
-          ball.radius; // Prevent the ball from going out of bounds
-        ball.velocity.x = -ball.velocity.x; // Reverse the horizontal velocity
+        context->ball.position.x =
+          context->ball.radius; // Prevent the ball from going out of bounds
+        context->ball.velocity.x =
+          -context->ball.velocity.x; // Reverse the horizontal velocity
     }
-    else if (ball.position.x + ball.radius >
+    else if (context->ball.position.x + context->ball.radius >
              windowWidth) // Ball hits right edge
     {
-        ball.position.x =
+        context->ball.position.x =
           windowWidth -
-          ball.radius; // Prevent the ball from going out of bounds
-        ball.velocity.x = -ball.velocity.x; // Reverse the horizontal velocity
+          context->ball.radius; // Prevent the ball from going out of bounds
+        context->ball.velocity.x =
+          -context->ball.velocity.x; // Reverse the horizontal velocity
     }
 
     // Check for collisions with the top and bottom edges of the window
-    if (ball.position.y - ball.radius < 0.0f) // Ball hits top edge
+    if (context->ball.position.y - context->ball.radius <
+        0.0f) // Ball hits top edge
     {
-        ball.position.y =
-          ball.radius; // Prevent the ball from going out of bounds
-        ball.velocity.y = -ball.velocity.y; // Reverse the vertical velocity
+        context->ball.position.y =
+          context->ball.radius; // Prevent the ball from going out of bounds
+        context->ball.velocity.y =
+          -context->ball.velocity.y; // Reverse the vertical velocity
     }
-    else if (ball.position.y + ball.radius >
+    else if (context->ball.position.y + context->ball.radius >
              windowHeight) // Ball hits bottom edge
     {
-        ball.position.y =
+        context->ball.position.y =
           windowHeight -
-          ball.radius; // Prevent the ball from going out of bounds
-        ball.velocity.y = -ball.velocity.y; // Reverse the vertical velocity
+          context->ball.radius; // Prevent the ball from going out of bounds
+        context->ball.velocity.y =
+          -context->ball.velocity.y; // Reverse the vertical velocity
     }
 }
 
 internal void
-Update(float deltaTime)
+Update(float deltaTime, Context* context)
 {
-    UpdateBall(deltaTime);
+    UpdateBall(deltaTime, context);
 }
 
 internal int
 Render(Context* context)
 {
-    SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(context->Device);
-    if (cmdbuf == NULL)
-    {
-        SDL_Log("AcquireGPUCommandBuffer failed: %s", SDL_GetError());
-        return -1;
-    }
-
-    SDL_GPUTexture* swapchainTexture;
-    if (!SDL_AcquireGPUSwapchainTexture(
-          cmdbuf, context->Window, &swapchainTexture, NULL, NULL))
-    {
-        SDL_Log("AcquireGPUSwapchainTexture failed: %s", SDL_GetError());
-        return -1;
-    }
-
-    if (swapchainTexture != NULL)
-    {
-
-        SDL_GPUColorTargetInfo colorTargetInfo = { 0 };
-        colorTargetInfo.texture = swapchainTexture;
-        colorTargetInfo.clear_color = (SDL_FColor){ 0.05f, 0.0f, 0.05f, 1.0f };
-        colorTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR;
-        colorTargetInfo.store_op = SDL_GPU_STOREOP_STORE;
-
-        // Update the texture coordinates of the texture quad to the ball's
-        // position
-        {
-            PositionTextureVertex transferData[4];
-
-            // Calculate normalized position of the ball (center of the ball)
-            float left =
-              (ball.position.x - ball.radius) / (float)GAME_WIDTH * 2.0f - 1.0f;
-            float right =
-              (ball.position.x + ball.radius) / (float)GAME_WIDTH * 2.0f - 1.0f;
-            float top =
-              (ball.position.y - ball.radius) / (float)GAME_HEIGHT * 2.0f -
-              1.0f;
-            float bottom =
-              (ball.position.y + ball.radius) / (float)GAME_HEIGHT * 2.0f -
-              1.0f;
-
-            // Update the vertices to form a rectangle with the ball's position
-            // and radius
-            transferData[0] =
-              (PositionTextureVertex){ left, top, 0, 0, 0 }; // Top-left corner
-            transferData[1] = (PositionTextureVertex){
-                right, top, 0, 1, 0
-            }; // Top-right corner
-            transferData[2] = (PositionTextureVertex){
-                right, bottom, 0, 1, 1
-            }; // Bottom-right corner
-            transferData[3] = (PositionTextureVertex){
-                left, bottom, 0, 0, 1
-            }; // Bottom-left corner
-
-            SDL_GPUTransferBufferCreateInfo bufferTransferBufferCreateInfo = {
-                .usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
-                .size = sizeof(PositionTextureVertex) * 4
-            };
-            SDL_GPUTransferBuffer* bufferTransferBuffer =
-              SDL_CreateGPUTransferBuffer(context->Device,
-                                          &bufferTransferBufferCreateInfo);
-
-            PositionTextureVertex* transferDataPtr =
-              static_cast<PositionTextureVertex*>(SDL_MapGPUTransferBuffer(
-                context->Device, bufferTransferBuffer, false));
-
-            SDL_memcpy(transferDataPtr, transferData, sizeof(transferData));
-            SDL_GPUTransferBufferLocation vertexBufferLocation = {
-                .transfer_buffer = bufferTransferBuffer, .offset = 0
-            };
-            SDL_GPUBufferRegion vertexBufferRegion = {
-                .buffer = context->Renderer.VertexBuffer,
-                .offset = 0,
-                .size = sizeof(PositionTextureVertex) * 4
-            };
-
-            // Create a copy pass
-            SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(cmdbuf);
-
-            // Upload the updated vertex data to the GPU
-            SDL_UploadToGPUBuffer(
-              copyPass, &vertexBufferLocation, &vertexBufferRegion, false);
-
-            SDL_UnmapGPUTransferBuffer(context->Device, bufferTransferBuffer);
-            SDL_EndGPUCopyPass(copyPass);
-        }
-
-        SDL_GPURenderPass* renderPass =
-          SDL_BeginGPURenderPass(cmdbuf, &colorTargetInfo, 1, NULL);
-
-        SDL_BindGPUGraphicsPipeline(renderPass, context->Renderer.Pipeline);
-
-        SDL_GPUBufferBinding vertexBufferBinding = {
-            .buffer = context->Renderer.VertexBuffer,
-            .offset = 0,
-        };
-        SDL_BindGPUVertexBuffers(renderPass, 0, &vertexBufferBinding, 1);
-
-        SDL_GPUBufferBinding indexBufferBinding = {
-            .buffer = context->Renderer.IndexBuffer,
-            .offset = 0,
-        };
-        SDL_BindGPUIndexBuffer(
-          renderPass, &indexBufferBinding, SDL_GPU_INDEXELEMENTSIZE_16BIT);
-
-        SDL_GPUTextureSamplerBinding textureSamplerBinding = {
-            .texture = context->Renderer.Texture,
-            .sampler =
-              context->Renderer.Samplers[context->Renderer.CurrentSamplerIndex]
-        };
-        SDL_BindGPUFragmentSamplers(renderPass, 0, &textureSamplerBinding, 1);
-
-        SDL_DrawGPUIndexedPrimitives(renderPass, 6, 1, 0, 0, 0);
-
-        SDL_EndGPURenderPass(renderPass);
-    }
-
-    SDL_SubmitGPUCommandBuffer(cmdbuf);
-
-    return 0;
+    return RendererRenderFrame(context);
 }
 
 internal void
@@ -400,6 +273,9 @@ main(int argc, char** argv)
     context->Window = NULL;
     context->Device = NULL;
     context->DeltaTime = 0.0f;
+    context->ball.position = glm::vec2(320.0f, 180.0f);
+    context->ball.velocity = glm::vec2(100.0f, 100.0f);
+    context->ball.radius = 32.0f;
 
     int initSuccess = Init(context);
     if (initSuccess > 0)
@@ -419,7 +295,7 @@ main(int argc, char** argv)
         lastTime = currentTime;
 
         Input(context);
-        Update(deltaTime);
+        Update(deltaTime, context);
         Render(context);
     }
 

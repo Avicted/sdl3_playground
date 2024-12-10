@@ -4,6 +4,13 @@
 
 #include "renderer.hpp"
 
+typedef struct Ball // @Note: Actually a rectangle
+{
+    glm::vec2 position;
+    glm::vec2 velocity;
+    float radius;
+} Ball;
+
 typedef struct Context
 {
     const char* GameName;
@@ -13,4 +20,7 @@ typedef struct Context
     float DeltaTime;
 
     GameRenderer Renderer;
+
+    // Game data
+    Ball ball;
 } Context;

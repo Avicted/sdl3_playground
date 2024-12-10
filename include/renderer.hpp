@@ -59,3 +59,6 @@ RendererCreateTexture(Context* context);
 
 extern SDL_GPUTransferBuffer*
 RendererCreateTransferBuffers(Context* context);
+
+extern int
+RendererRenderFrame(Context* context);
