@@ -30,7 +30,7 @@ typedef struct Ball // @Note: Actually a rectangle
 Ball ball = {
     .position = { 0.0f, 0.0f },
     .velocity = { 256.4f, 128.6f },
-    .radius = 128.0f,
+    .radius = 64.0f,
 };
 
 bool isRunning = true;
@@ -448,7 +448,7 @@ Init(Context* context)
     VertexBuffer =
       SDL_CreateGPUBuffer(context->Device, &vertexBufferCreateInfo);
     SDL_SetGPUBufferName(
-      context->Device, VertexBuffer, "TestImage Vertex Buffer 🥣");
+      context->Device, VertexBuffer, "TestImage Vertex Buffer");
 
     SDL_GPUBufferCreateInfo indexBufferCreateInfo = {
         .usage = SDL_GPU_BUFFERUSAGE_INDEX, .size = sizeof(Uint16) * 6
@@ -465,7 +465,7 @@ Init(Context* context)
         .num_levels = 1,
     };
     Texture = SDL_CreateGPUTexture(context->Device, &textureCreateInfo);
-    SDL_SetGPUTextureName(context->Device, Texture, "TestImage Texture 🖼️");
+    SDL_SetGPUTextureName(context->Device, Texture, "TestImage Texture");
 
     // Set up buffer data
     SDL_GPUTransferBufferCreateInfo bufferTransferBufferCreateInfo = {
@@ -655,31 +655,6 @@ Update(float deltaTime)
     UpdateBall(deltaTime);
 }
 
-/*tatic void
-UpdateBallVertices(PositionTextureVertex* transferData)
-{
-    // Calculate normalized position of the ball (center of the ball)
-    float left =
-      (ball.position.x - ball.radius) / (float)GAME_WIDTH * 2.0f - 1.0f;
-    float right =
-      (ball.position.x + ball.radius) / (float)GAME_WIDTH * 2.0f - 1.0f;
-    float top =
-      (ball.position.y - ball.radius) / (float)GAME_HEIGHT * 2.0f - 1.0f;
-    float bottom =
-      (ball.position.y + ball.radius) / (float)GAME_HEIGHT * 2.0f - 1.0f;
-
-    // Update the vertices to form a rectangle with the ball's position and
-    // radius
-    transferData[0] =
-      (PositionTextureVertex){ left, top, 0, 0, 0 }; // Top-left corner
-    transferData[1] =
-      (PositionTextureVertex){ right, top, 0, 1, 0 }; // Top-right corner
-    transferData[2] =
-      (PositionTextureVertex){ right, bottom, 0, 1, 1 }; // Bottom-right corner
-    transferData[3] =
-      (PositionTextureVertex){ left, bottom, 0, 0, 1 }; // Bottom-left corner
-}*/
-
 internal int
 Render(Context* context)
 {
@@ -702,9 +677,73 @@ Render(Context* context)
     {
         SDL_GPUColorTargetInfo colorTargetInfo = { 0 };
         colorTargetInfo.texture = swapchainTexture;
-        colorTargetInfo.clear_color = (SDL_FColor){ 0.0f, 0.0f, 0.0f, 1.0f };
+        colorTargetInfo.clear_color = (SDL_FColor){ 0.05f, 0.0f, 0.05f, 1.0f };
         colorTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR;
         colorTargetInfo.store_op = SDL_GPU_STOREOP_STORE;
+
+        // Update the texture coordinates of the texture quad to the ball's
+        // position
+        {
+            PositionTextureVertex transferData[4];
+
+            // Calculate normalized position of the ball (center of the ball)
+            float left =
+              (ball.position.x - ball.radius) / (float)GAME_WIDTH * 2.0f - 1.0f;
+            float right =
+              (ball.position.x + ball.radius) / (float)GAME_WIDTH * 2.0f - 1.0f;
+            float top =
+              (ball.position.y - ball.radius) / (float)GAME_HEIGHT * 2.0f -
+              1.0f;
+            float bottom =
+              (ball.position.y + ball.radius) / (float)GAME_HEIGHT * 2.0f -
+              1.0f;
+
+            // Update the vertices to form a rectangle with the ball's position
+            // and radius
+            transferData[0] =
+              (PositionTextureVertex){ left, top, 0, 0, 0 }; // Top-left corner
+            transferData[1] = (PositionTextureVertex){
+                right, top, 0, 1, 0
+            }; // Top-right corner
+            transferData[2] = (PositionTextureVertex){
+                right, bottom, 0, 1, 1
+            }; // Bottom-right corner
+            transferData[3] = (PositionTextureVertex){
+                left, bottom, 0, 0, 1
+            }; // Bottom-left corner
+
+            SDL_GPUTransferBufferCreateInfo bufferTransferBufferCreateInfo = {
+                .usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
+                .size = sizeof(PositionTextureVertex) * 4
+            };
+            SDL_GPUTransferBuffer* bufferTransferBuffer =
+              SDL_CreateGPUTransferBuffer(context->Device,
+                                          &bufferTransferBufferCreateInfo);
+
+            PositionTextureVertex* transferDataPtr =
+              static_cast<PositionTextureVertex*>(SDL_MapGPUTransferBuffer(
+                context->Device, bufferTransferBuffer, false));
+
+            SDL_memcpy(transferDataPtr, transferData, sizeof(transferData));
+            SDL_GPUTransferBufferLocation vertexBufferLocation = {
+                .transfer_buffer = bufferTransferBuffer, .offset = 0
+            };
+            SDL_GPUBufferRegion vertexBufferRegion = {
+                .buffer = VertexBuffer,
+                .offset = 0,
+                .size = sizeof(PositionTextureVertex) * 4
+            };
+
+            // Create a copy pass
+            SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(cmdbuf);
+
+            // Upload the updated vertex data to the GPU
+            SDL_UploadToGPUBuffer(
+              copyPass, &vertexBufferLocation, &vertexBufferRegion, false);
+
+            SDL_UnmapGPUTransferBuffer(context->Device, bufferTransferBuffer);
+            SDL_EndGPUCopyPass(copyPass);
+        }
 
         SDL_GPURenderPass* renderPass =
           SDL_BeginGPURenderPass(cmdbuf, &colorTargetInfo, 1, NULL);
