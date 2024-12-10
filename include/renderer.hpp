@@ -62,3 +62,12 @@ RendererCreateTransferBuffers(Context* context);
 
 extern int
 RendererRenderFrame(Context* context);
+
+extern SDL_Surface*
+RendererLoadImage(Context* context, const char* filename, int numChannels);
+
+extern void
+RendererResizeWindow(Context* context, int w, int h);
+
+extern void
+RendererDestroy(Context* context);

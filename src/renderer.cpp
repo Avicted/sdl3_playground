@@ -697,3 +697,87 @@ RendererInitPipeline(Context* context)
 
     return 0;
 }
+
+SDL_Surface*
+RendererLoadImage(Context* context,
+                  const char* imageFilename,
+                  int desiredChannels)
+{
+    char fullPath[256];
+    SDL_Surface* result;
+    SDL_PixelFormat format;
+
+    SDL_snprintf(fullPath,
+                 sizeof(fullPath),
+                 "%sresources/%s",
+                 context->BasePath,
+                 imageFilename);
+
+    result = SDL_LoadBMP(fullPath);
+    if (result == NULL)
+    {
+        SDL_Log("Failed to load BMP: %s", SDL_GetError());
+        return NULL;
+    }
+
+    if (desiredChannels == 4)
+    {
+        format = SDL_PIXELFORMAT_ABGR8888;
+    }
+    else
+    {
+        SDL_assert(!"Unexpected desiredChannels");
+        SDL_DestroySurface(result);
+        return NULL;
+    }
+    if (result->format != format)
+    {
+        SDL_Surface* next = SDL_ConvertSurface(result, format);
+        SDL_DestroySurface(result);
+        result = next;
+    }
+
+    return result;
+}
+
+void
+RendererResizeWindow(Context* context, int w, int h)
+{
+    // -- Calculate scale to fit the 16:9 resolution
+    context->scaleX = w / GAME_WIDTH;
+    context->scaleY = h / GAME_HEIGHT;
+    context->scale = std::min(context->scaleX, context->scaleY);
+
+    // -- Calculate offsets to center the game content in the window
+    context->offsetX = (w - GAME_WIDTH * context->scale) / 2;
+    context->offsetY = (h - GAME_HEIGHT * context->scale) / 2;
+
+    printf("Scale: %d x %d\n", context->scaleX, context->scaleY);
+    printf("Offset: %d x %d\n", context->offsetX, context->offsetY);
+    printf("Window size: %d x %d\n", w, h);
+}
+
+void
+RendererDestroy(Context* context)
+{
+    SDL_ReleaseGPUGraphicsPipeline(context->Device, context->Renderer.Pipeline);
+    SDL_ReleaseGPUBuffer(context->Device, context->Renderer.VertexBuffer);
+    SDL_ReleaseGPUBuffer(context->Device, context->Renderer.IndexBuffer);
+    SDL_ReleaseGPUTexture(context->Device, context->Renderer.Texture);
+    SDL_ReleaseGPUTransferBuffer(context->Device,
+                                 context->Renderer.textureTransferBuffer);
+
+    for (long unsigned int i = 0; i < SDL_arraysize(context->Renderer.Samplers);
+         i += 1)
+    {
+        SDL_ReleaseGPUSampler(context->Device, context->Renderer.Samplers[i]);
+    }
+
+    context->Renderer.CurrentSamplerIndex = 0;
+
+    SDL_ReleaseWindowFromGPUDevice(context->Device, context->Window);
+    SDL_DestroyWindow(context->Window);
+    SDL_DestroyGPUDevice(context->Device);
+
+    free(context);
+}
