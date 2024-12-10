@@ -8,7 +8,7 @@ INCLUDES = -I./submodules/SDL/include -I./include -I/include/glad -I./submodules
 
 LIBS = -L./submodules/SDL/build -L./submodules/glm/build/glm -lSDL3 -lglm -lm
 
-SRC = src/main.cpp
+SRC = src/main.cpp src/renderer.cpp
 
 EXE = build/SDL_playground
 

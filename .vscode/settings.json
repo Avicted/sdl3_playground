@@ -28,6 +28,11 @@
         "system_error": "cpp",
         "thread": "cpp",
         "chrono": "cpp",
-        "*.inc": "cpp"
+        "*.inc": "cpp",
+        "functional": "cpp",
+        "__locale": "cpp",
+        "ranges": "cpp",
+        "set": "cpp",
+        "unordered_set": "cpp"
     }
 }
