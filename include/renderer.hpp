@@ -22,10 +22,14 @@ typedef struct GameRenderer
 {
     bool isInitialized = false;
 
+    SDL_Window* Window;
+    SDL_GPUDevice* Device;
+
     SDL_GPUGraphicsPipeline* Pipeline;
     SDL_GPUBuffer* VertexBuffer;
     SDL_GPUBuffer* IndexBuffer;
-    SDL_GPUTexture* Texture;
+    SDL_GPUTexture* ColorTexture;
+    SDL_GPUTexture* SwapchainTexture;
     SDL_GPUSampler* Samplers[NumSamplers];
     int CurrentSamplerIndex = 1;
 
@@ -34,11 +38,9 @@ typedef struct GameRenderer
     SDL_GPUTransferBuffer* textureTransferBuffer;
     SDL_GPUCommandBuffer* uploadCmdBuf;
 
-    // Shaders
     SDL_GPUShader* vertexShader;
     SDL_GPUShader* fragmentShader;
 
-    // Data
     SDL_Surface* imageData;
 } GameRenderer;
 
@@ -54,7 +56,7 @@ RendererInitSDL(Context* context, SDL_WindowFlags windowFlags);
 extern int
 RendererCreateSamplers(Context* context);
 
-extern int
+extern SDL_GPUTransferBuffer*
 RendererCreateTexture(Context* context);
 
 extern SDL_GPUTransferBuffer*

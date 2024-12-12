@@ -43,7 +43,7 @@ Init(Context* context)
 
     // -- Calculate scale and offsets for initial window size
     int w, h;
-    SDL_GetWindowSize(context->Window, &w, &h);
+    SDL_GetWindowSize(context->Renderer.Window, &w, &h);
     RendererResizeWindow(context, GAME_WIDTH, GAME_HEIGHT);
 
     printf("Window size: %d x %d\n", w, h);
@@ -62,6 +62,7 @@ Init(Context* context)
     RendererInitPipeline(context);
     RendererCreateSamplers(context);
     RendererCreateTexture(context);
+    context->Renderer.isInitialized = true;
 
     return 0;
 }
@@ -188,16 +189,14 @@ main(int argc, char** argv)
     Context* context = (Context*)calloc(1, sizeof(Context));
     context->GameName = "SDL2 Playground";
     context->BasePath = SDL_GetBasePath();
-    context->Window = NULL;
-    context->Device = NULL;
     context->DeltaTime = 0.0f;
     context->ball.position = glm::vec2(320.0f, 180.0f);
-    context->ball.velocity = glm::vec2(400.0f, 400.0f);
+    context->ball.velocity = glm::vec2(100.0f, 150.0f);
     context->ball.radius = 32.0f;
-    context->isRunning = true;
-
     context->windowWidth = GAME_WIDTH;
     context->windowHeight = GAME_HEIGHT;
+    context->Renderer.isInitialized = false;
+    context->Renderer = { 0 };
 
     int initSuccess = Init(context);
     if (initSuccess > 0)
@@ -206,6 +205,7 @@ main(int argc, char** argv)
     }
 
     Uint64 lastTime = SDL_GetPerformanceCounter();
+    context->isRunning = true;
 
     // Game loop
     while (context->isRunning)
