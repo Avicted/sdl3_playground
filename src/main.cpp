@@ -41,7 +41,6 @@ Init(Context* context)
 
     RendererInitShaders(context);
 
-    // -- Calculate scale and offsets for initial window size
     int w, h;
     SDL_GetWindowSize(context->Renderer.Window, &w, &h);
     RendererResizeWindow(context, GAME_WIDTH, GAME_HEIGHT);
@@ -50,7 +49,6 @@ Init(Context* context)
     printf("Scale: %d x %d\n", context->scaleX, context->scaleY);
     printf("Offset: %d x %d\n", context->offsetX, context->offsetY);
 
-    // Load the image
     context->Renderer.imageData = RendererLoadImage(context, "uv_test.bmp", 4);
     if (context->Renderer.imageData == NULL)
     {
@@ -58,7 +56,6 @@ Init(Context* context)
         return -1;
     }
 
-    // Create the pipeline
     RendererInitPipeline(context);
     RendererCreateSamplers(context);
     RendererCreateTexture(context);
@@ -192,7 +189,7 @@ main(int argc, char** argv)
     context->DeltaTime = 0.0f;
     context->ball.position = glm::vec2(320.0f, 180.0f);
     context->ball.velocity = glm::vec2(100.0f, 150.0f);
-    context->ball.radius = 32.0f;
+    context->ball.radius = 64.0f;
     context->windowWidth = GAME_WIDTH;
     context->windowHeight = GAME_HEIGHT;
     context->Renderer.isInitialized = false;
