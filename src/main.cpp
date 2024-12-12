@@ -11,6 +11,8 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/vec2.hpp>
 
+#include <box2d/box2d.h>
+
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_MALLOC SDL_malloc
 #define STBI_REALLOC SDL_realloc

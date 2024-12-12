@@ -4,16 +4,22 @@ CXX = g++
 CFLAGS = -Wall -Wextra -Werror -O0 -std=c99 -ggdb
 CXXFLAGS = -Wall -Wextra -Werror -O0 -std=c++17 -ggdb -Wno-error=missing-field-initializers -Wno-missing-field-initializers
 
-INCLUDES = -I./submodules/SDL/include -I./include -I/include/glad -I./submodules/glm
+INCLUDES =  -I./submodules/SDL/include \
+			-I./include \
+			-I./submodules/glm \
+			-I./submodules/box2d/include
 
-LIBS = -L./submodules/SDL/build -L./submodules/glm/build/glm -lSDL3 -lglm -lm
+LIBS = -L./submodules/SDL/build \
+	   -L./submodules/glm/build/glm \
+	   -L./submodules/box2d/build/src \
+	   -lSDL3 -lglm -lbox2d -lm
 
 SRC = src/main.cpp src/renderer.cpp
 
 EXE = build/SDL_playground
 
 # Build everything
-all: SDL glm compile_shaders $(EXE)
+all: SDL glm box2D compile_shaders $(EXE)
 
 # Build the main executable
 $(EXE): $(SRC)
@@ -39,6 +45,9 @@ glm:
 		-B build . && \
 	cmake --build build -- all
 
+box2D:
+	cd submodules/box2d && ./build.sh
+
 clean:
 	rm -f $(EXE)
 	rm -rf build
@@ -52,6 +61,8 @@ help:
 	@echo "  clean: Remove the executable"
 	@echo "  run:   Run the executable"
 	@echo "  SDL:   Build the SDL library"
+	@echo "  glm:   Build the glm library"
+	@echo "  box2D: Build the box2D library"
 	@echo "  help:  Display this help message"
 
 .PHONY: all clean run help SDL
