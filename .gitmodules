@@ -4,3 +4,6 @@
 [submodule "submodules/glm"]
 	path = submodules/glm
 	url = git@github.com:g-truc/glm.git
+[submodule "submodules/box2d"]
+	path = submodules/box2d
+	url = git@github.com:erincatto/box2d.git
