@@ -12,13 +12,15 @@ git clone --recurse-submodules git@github.com:Avicted/sdl3_playground.git
 
 cd sdl3_playground
 
-make
-make run
+make && make run
 ```
 
 ## Features:
 - Vulkan rendering
-- Work in progress: Variable resolution with preserved aspect ratio with black bars
+- Work in progress: 
+    - Variable resolution with preserved aspect ratio with black bars
+    - Box2D physics integration
+
 - Game loop:
     - Input
     - Update

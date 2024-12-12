@@ -68,7 +68,19 @@ Init(Context* context)
     context->worldDef.gravity = (b2Vec2){ 0.0f, 0.0f };
     context->worldId = b2CreateWorld(&context->worldDef);
 
-    // Create the ball's physics body
+    // ------------------------------------------------------------
+
+    // Create the surrounding walls
+    context->bodyDefTop = b2DefaultBodyDef();
+    context->bodyDefTop.position = (b2Vec2){ 0.0f, 0.0f };
+    context->bodyDefTop.type = b2_staticBody;
+    context->topBoxId = b2CreateBody(context->worldId, &context->bodyDefTop);
+    context->topBoxPolygon = b2MakeBox(GAME_WIDTH, 1.0f);
+    context->groundShapeDef = b2DefaultShapeDef();
+    b2CreatePolygonShape(
+      context->topBoxId, &context->groundShapeDef, &context->topBoxPolygon);
+
+    printf("Top wall created\n");
 
     return 0;
 }

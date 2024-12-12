@@ -6,6 +6,7 @@ CXXFLAGS = -Wall -Wextra -Werror -O0 -std=c++17 -ggdb -Wno-error=missing-field-i
 
 INCLUDES =  -I./submodules/SDL/include \
 			-I./include \
+			-I./include/stb \
 			-I./submodules/glm \
 			-I./submodules/box2d/include
 

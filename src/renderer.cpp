@@ -155,20 +155,6 @@ RendererRenderFrame(Context* context)
         return -1;
     }
 
-    /*SDL_GPUBlitInfo blit = { 0 };
-    blit.source.x = 0;
-    blit.source.y = 0;
-    blit.source.w = GAME_WIDTH;
-    blit.source.h = GAME_HEIGHT;
-    blit.source.texture = context->Renderer.CompositeTexture;
-    blit.destination.x = 0;
-    blit.destination.y = 0;
-    blit.destination.w = GAME_WIDTH;
-    blit.destination.h = GAME_HEIGHT;
-    blit.destination.texture = context->Renderer.ColorTexture;
-    blit.filter = SDL_GPU_FILTER_NEAREST;
-    SDL_BlitGPUTexture(cmdbuf, &blit);*/
-
     SDL_SubmitGPUCommandBuffer(cmdbuf);
 
     return 0;
