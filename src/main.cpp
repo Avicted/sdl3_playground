@@ -63,6 +63,13 @@ Init(Context* context)
     RendererCreateTexture(context);
     context->Renderer.isInitialized = true;
 
+    // Physics init
+    context->worldDef = b2DefaultWorldDef();
+    context->worldDef.gravity = (b2Vec2){ 0.0f, 0.0f };
+    context->worldId = b2CreateWorld(&context->worldDef);
+
+    // Create the ball's physics body
+
     return 0;
 }
 
@@ -221,6 +228,9 @@ main(int argc, char** argv)
     }
 
     RendererDestroy(context);
+
+    // Clean up
+    b2DestroyWorld(context->worldId);
 
     return 0;
 }

@@ -2,6 +2,8 @@
 
 #include <SDL3/SDL.h>
 
+#include <box2d/box2d.h>
+
 #include "ball.hpp"
 #include "renderer.hpp"
 
@@ -19,6 +21,10 @@ typedef struct Context
     int scaleX, scaleY, scale, offsetX, offsetY;
 
     GameRenderer Renderer;
+
+    // Physics
+    b2WorldDef worldDef;
+    b2WorldId worldId;
 
     // Game data
     Ball ball;
