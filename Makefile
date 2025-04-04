@@ -35,8 +35,8 @@ compile_shaders:
 SDL:
 	cd submodules/SDL && \
 	(mkdir build || true) && cd build && \
-	cmake -G Ninja -DCMAKE_BUILD_TYPE=Release .. && \
-	cmake --build . --config Release --parallel
+	cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DSDL_PIPEWIRE=OFF .. && \
+	cmake --build . --config Release --parallel 
 
 glm:
 	cd submodules/glm && \
